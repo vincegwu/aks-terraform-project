@@ -5,10 +5,9 @@ location     = "australiacentral"
 address_space = ["10.10.0.0/16"]
 
 subnets = {
-  public1  = { address_prefixes = ["10.10.1.0/24"] }  # For Load Balancer / Ingress
-  public2  = { address_prefixes = ["10.10.2.0/24"] }  # For additional public resources
-  aks      = { address_prefixes = ["10.10.3.0/24"] }  # Private subnet for AKS node pools
-  database = { address_prefixes = ["10.10.4.0/24"] }  # Private subnet for MySQL
+  egress   = { address_prefixes = ["10.10.1.0/24"] }  # Egress subnet for NAT Gateway
+  aks      = { address_prefixes = ["10.10.2.0/24"] }  # Private subnet for AKS node pools
+  database = { address_prefixes = ["10.10.3.0/24"] }  # Private subnet for MySQL
 }
 
 

@@ -32,4 +32,12 @@ if [ -z "$ARM_SUBSCRIPTION_ID" ]; then
   fi
 fi
 
-terraform "$@" -var-file="$VAR_FILE"
+CMD="$1"
+case "$CMD" in
+  plan|apply|destroy|import|refresh)
+    terraform "$@" -var-file="$VAR_FILE"
+    ;;
+  *)
+    terraform "$@"
+    ;;
+esac

@@ -28,3 +28,9 @@ variable "mysql_admin_password" {
 variable "kv_sku" {
   default = "standard"
 }
+
+variable "create_private_endpoints" {
+  type        = bool
+  description = "Global flag to enable creation of optional private endpoints for modules that support them (ACR, Key Vault). Set to true to create private endpoints."
+  default     = false
+}

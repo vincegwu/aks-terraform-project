@@ -35,6 +35,8 @@ module "acr" {
   environment  = var.environment
   location     = var.location
   resource_group_name = module.network.resource_group_name
+  private_subnet_id   = lookup(module.network.subnet_ids, "aks", "")
+  enable_private_endpoint = var.create_private_endpoints
 }
 
 module "keyvault" {
@@ -48,4 +50,6 @@ module "keyvault" {
     environment = var.environment
     project     = var.project_name
   }
+  private_subnet_id = lookup(module.network.subnet_ids, "aks", "")
+  enable_private_endpoint = var.create_private_endpoints
 }

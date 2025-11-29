@@ -31,3 +31,8 @@ resource "azurerm_private_endpoint" "db_pe" {
     subresource_names              = ["mysqlServer"]
   }
 }
+
+// Private DNS handling for MySQL removed here — module creates the Private
+// Endpoint only. If you need private DNS records, create them in a separate
+// DNS management module or via a centralized process that targets your
+// environment's provider version.

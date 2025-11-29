@@ -2,7 +2,6 @@ variable "subnet_ids" {
   type        = map(string)
   description = "Map of subnet IDs from network module"
 }
-
 variable "resource_group_name" {
   type        = string
   description = "Resource group name from network module"
