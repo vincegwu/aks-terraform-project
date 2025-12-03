@@ -135,7 +135,7 @@ To destroy all deployed infrastructure and avoid incurring further Azure costs, 
 
 Following these practices ensures a secure, maintainable, and repeatable deployment process:
 
-* Always use **Terraform workspaces** for environment isolation (Dev, Stage, Prod).
+* Always use **Terraform workspaces** for environment isolation ( Dev, Stage, Prod ).
 * Avoid **hardcoding credentials** in configuration files; use **Azure Key Vault** for secure secret storage and dynamic retrieval.
 * Verify **NSG (Network Security Group) and UDR (User-Defined Route)** rules after deployment to ensure secure network flow matches the traffic matrix.
 * Always perform a careful review of the comprehensive **`terraform plan`** output before executing **`terraform apply`**.
