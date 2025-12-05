@@ -16,4 +16,5 @@ output "nsg_ids" {
 
 output "route_table_ids" {
   value = azurerm_route_table.private[*].id
+  description = "update the output file on the network module"
 }
