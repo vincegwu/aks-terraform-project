@@ -31,7 +31,7 @@ jobs:
 
       - name: Run Checkov (action)
         id: checkov
-        uses: bridgecrewio/checkov-action@v14
+        uses: bridgecrewio/checkov-action@v12.1347.0
         with:
           # pass args to the checkov CLI to produce both JSON and junit XML outputs
           args: >
