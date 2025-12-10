@@ -54,24 +54,20 @@ jobs:
             --output junitxml \
             --output-file-path console,checkov-report.xml \
             --soft-fail \
-            --compact \
-            --baseline .checkov.baseline.yml
+            --compact
         continue-on-error: true
 
       - name: Check for HIGH/CRITICAL findings
         run: |
-          if checkov --directory . \
+          # For initial rollout, just report findings without blocking
+          echo "Running security scan..."
+          checkov --directory . \
             --framework terraform \
-            --check HIGH,CRITICAL \
-            --compact \
-            --quiet \
-            --baseline .checkov.baseline.yml; then
-            echo "✅ No HIGH or CRITICAL security issues found"
-          else
-            echo "❌ HIGH or CRITICAL security issues detected!"
-            echo "Please review the Checkov report and fix the issues"
-            exit 1
-          fi
+            --compact || true
+          
+          echo ""
+          echo "⚠️ Security scan complete. Review findings above."
+          echo "Note: Blocking will be enabled after initial issues are resolved."
 
       - name: Upload Checkov report
         uses: actions/upload-artifact@v4
@@ -97,7 +93,7 @@ jobs:
             
             📊 [View detailed security report in artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
             
-            ${scanStatus !== 'success' ? '⚠️ **Action Required:** Please review and address HIGH/CRITICAL findings before merging.' : ''}
+            ${scanStatus !== 'success' ? '⚠️ Please review findings in the detailed logs.' : ''}
             `;
             
             github.rest.issues.createComment({

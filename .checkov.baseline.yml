@@ -1,19 +1,10 @@
 # Checkov Baseline Configuration
-# This file documents known exceptions and suppressions for security checks
+# This file can be used for suppressions in the future
 
-suppressions:
-  # Example: Suppress requirement for disk encryption in dev environment
-  - check: CKV_AZURE_97
-    file_path: modules/aks/main.tf
-    reason: "Dev environment uses standard disk encryption. Customer-managed keys configured for Stage/Prod only."
-  
-  # Example: Network policies applied at cluster level
-  - check: CKV_AZURE_116
-    file_path: modules/network/main.tf
-    reason: "Network policies enforced via Azure NSGs and AKS network policies, not subnet-level enforcement."
+suppressions: []
 
-# Instructions for adding suppressions:
-# 1. Run Checkov locally: checkov --directory . --framework terraform
-# 2. Identify the check ID that needs suppression
-# 3. Add entry above with clear justification
-# 4. Get approval from security team before merging
+# To add suppressions later, use this format:
+# suppressions:
+#   - check: CKV_AZURE_97
+#     file_path: modules/aks/main.tf  
+#     reason: "Approved exception with justification"

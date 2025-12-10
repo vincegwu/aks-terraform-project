@@ -12,14 +12,9 @@ skip-path:
   - .git/
   - scripts/
 
-skip-check: []
-
 soft-fail: false
 compact: true
-quiet: false
 
 output:
   - cli
   - junitxml
-
-download-external-modules: true
