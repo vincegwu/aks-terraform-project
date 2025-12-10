@@ -1,109 +1,106 @@
 name: AKS Terraform Pipeline
 
-on: 
+on:
   push:
     branches:
       - main
+      - 'release/**'
   pull_request:
-    branches:
-      - main
-  workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Deployment Environment'
-        required: true
-        type: choice
-        options:
-          - dev
-          - stage 
-          - prod
+    types: [opened, synchronize, reopened]
 
 env:
-  TF_VERSION: '1.7.5'
   AZURE_REGION: 'australiacentral'
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  security-events: write
+
 jobs:
-  # Security Scanning Job
   security-scan:
     name: Security Scan with Checkov
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+      - name: Install jq (for JSON parsing)
+        run: sudo apt-get update && sudo apt-get install -y jq
 
-      - name: Install Checkov
-        run: |
-          pip install checkov
-          checkov --version
-
-      - name: Run Checkov security scan
+      - name: Run Checkov (action)
         id: checkov
-        run: |
-          checkov --directory . \
-            --framework terraform \
-            --output cli \
-            --output junitxml \
-            --output-file-path console,checkov-report.xml \
-            --soft-fail \
-            --compact
+        uses: bridgecrewio/checkov-action@v14
+        with:
+          args: >
+            --directory . --framework terraform
+            -o json --output-file-path checkov-report.json
+            -o junitxml --output-file-path checkov-report.xml
         continue-on-error: true
 
-      - name: Check for HIGH/CRITICAL findings
+      - name: Parse Checkov JSON for HIGH/CRITICAL
+        id: parse
         run: |
-          # For initial rollout, just report findings without blocking
-          echo "Running security scan..."
-          checkov --directory . \
-            --framework terraform \
-            --compact || true
-          
-          echo ""
-          echo "⚠️ Security scan complete. Review findings above."
-          echo "Note: Blocking will be enabled after initial issues are resolved."
+          if [ -f checkov-report.json ]; then
+            HIGH_COUNT=$(jq '[.results.failed_checks[] | select(.severity=="HIGH" or .severity=="CRITICAL")] | length' checkov-report.json)
+          else
+            HIGH_COUNT=0
+          fi
+          echo "high_count=$HIGH_COUNT" >> $GITHUB_OUTPUT
 
-      - name: Upload Checkov report
-        uses: actions/upload-artifact@v4
+      - name: Upload Checkov reports
         if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: checkov-security-report
-          path: checkov-report.xml
+          path: |
+            checkov-report.json
+            checkov-report.xml
+          if-no-files-found: warn
           retention-days: 30
 
-      - name: Comment PR with scan results
+      - name: Comment PR with scan summary
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
-            const scanStatus = '${{ steps.checkov.outcome }}';
-            const emoji = scanStatus === 'success' ? '✅' : '⚠️';
-            
-            const comment = `## ${emoji} Security Scan Results
-            
-            **Status:** ${scanStatus === 'success' ? 'Passed' : 'Issues Found'}
-            
-            Checkov has completed scanning your Terraform code for security vulnerabilities.
-            
-            📊 [View detailed security report in artifacts](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
-            
-            ${scanStatus !== 'success' ? '⚠️ Please review findings in the detailed logs.' : ''}
+            const highCount = parseInt(process.env.HIGH_COUNT || '${{ steps.parse.outputs.high_count }}' || 0);
+            const emoji = highCount > 0 ? '⚠️' : '✅';
+            const statusText = highCount > 0 ? `Issues found: ${highCount} HIGH/CRITICAL` : 'No HIGH/CRITICAL issues found';
+            const runUrl = `https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}`;
+
+            const body = `## ${emoji} Checkov Security Scan Summary
+
+            - **Status:** ${statusText}
+            - **Checkov report:** [Action run and artifacts](${runUrl})
+
+            ${ highCount > 0 ? '> This PR is blocked until HIGH/CRITICAL issues are resolved.' : '' }
+
+            <details>
+            <summary>Scan details</summary>
+
+            - JSON report: checkov-report.json
+            - JUnit report: checkov-report.xml
+
+            </details>
             `;
-            
+
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: comment
+              body
             });
+        env:
+          HIGH_COUNT: ${{ steps.parse.outputs.high_count }}
 
-  # Existing Terraform Job
+      - name: Fail on HIGH/CRITICAL findings
+        if: steps.parse.outputs.high_count != '0'
+        run: |
+          echo "Failing job because ${{ steps.parse.outputs.high_count }} HIGH/CRITICAL Checkov findings were detected."
+          exit 1
+
   terraform:
     name: Terraform Plan/Apply
     runs-on: ubuntu-latest
@@ -112,3 +109,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Placeholder - Terraform steps
+        run: echo "Add your Terraform plan/apply steps here"
