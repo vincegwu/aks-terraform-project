@@ -22,8 +22,4 @@ output:
   - cli
   - junitxml
 
-# Removed: enable-secret-scan: true
-# Secret scanning is enabled by default in recent Checkov versions
-
 download-external-modules: true
-parallel: true
