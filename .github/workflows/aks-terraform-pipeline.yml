@@ -49,4 +49,37 @@ jobs:
         run: terraform validate
 
       
+  terraform-plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    needs: terraform-validate
+    strategy:
+      matrix:
+        environment: [dev, stage, prod]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+          
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
       
+      - name: Terraform Init
+        run: terraform init -backend-config="environment=${{ matrix.environment }}"
+      
+      - name: Terraform Plan
+        run: terraform plan -var="environment=${{ matrix.environment }}" -out=tfplan
+      
+      - name: Save Terraform Plan Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: tfplan-${{ matrix.environment }}
+          path: tfplan  
