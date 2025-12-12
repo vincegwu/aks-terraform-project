@@ -6,7 +6,7 @@ This project provisions an AKS cluster with supporting infrastructure using Terr
 
 * Multi-environment support: Dev, Stage, Prod
 * Secure networking: 1 public + 2 private subnets per environment
-* Azure MySQL Flexible Server with private endpoint
+* Azure MySQL Flexible Server with VNet integration
 * Azure Container Registry (ACR)
 * Azure Key Vault for secrets
 * CI/CD-friendly setup with workspaces
@@ -139,8 +139,7 @@ Node Pool: default
 
 ```
 Name: <project>-<environment>-mysql
-Private Endpoint: <project>-<environment>-db-pe
-Private Service Connection: <project>-<environment>-db-psc
+Deployed via VNet integration into delegated database subnet
 ```
 
 #### **2.7 Azure Container Registry (ACR)**
@@ -187,16 +186,15 @@ Tags must be applied consistently across all modules.
 
 ### 5. Resource Names Across Environments
 
-| Resource Type    | Dev                   | Stage                   | Prod                   |
-| ---------------- | --------------------- | ----------------------- | ---------------------- |
-| Resource Group   | cloudproj-dev-rg      | cloudproj-stage-rg      | cloudproj-prod-rg      |
-| VNet             | cloudproj-dev-vnet    | cloudproj-stage-vnet    | cloudproj-prod-vnet    |
-| NSGs             | cloudproj-dev-aks-nsg | cloudproj-stage-aks-nsg | cloudproj-prod-aks-nsg |
-| AKS              | cloudproj-dev-aks     | cloudproj-stage-aks     | cloudproj-prod-aks     |
-| MySQL            | cloudproj-dev-mysql   | cloudproj-stage-mysql   | cloudproj-prod-mysql   |
-| Private Endpoint | cloudproj-dev-db-pe   | cloudproj-stage-db-pe   | cloudproj-prod-db-pe   |
-| ACR              | cloudprojdevacr       | cloudprojstageacr       | cloudprojprodacr       |
-| Key Vault        | cloudproj-dev-kv      | cloudproj-stage-kv      | cloudproj-prod-kv      |
+| Resource Type  | Dev                   | Stage                   | Prod                   |
+| -------------- | --------------------- | ----------------------- | ---------------------- |
+| Resource Group | cloudproj-dev-rg      | cloudproj-stage-rg      | cloudproj-prod-rg      |
+| VNet           | cloudproj-dev-vnet    | cloudproj-stage-vnet    | cloudproj-prod-vnet    |
+| NSGs           | cloudproj-dev-aks-nsg | cloudproj-stage-aks-nsg | cloudproj-prod-aks-nsg |
+| AKS            | cloudproj-dev-aks     | cloudproj-stage-aks     | cloudproj-prod-aks     |
+| MySQL          | cloudproj-dev-mysql   | cloudproj-stage-mysql   | cloudproj-prod-mysql   |
+| ACR            | cloudprojdevacr       | cloudprojstageacr       | cloudprojprodacr       |
+| Key Vault      | cloudproj-dev-kv      | cloudproj-stage-kv      | cloudproj-prod-kv      |
 
 ---
 
@@ -204,7 +202,7 @@ Tags must be applied consistently across all modules.
 
 * VNet ID, Subnet IDs, NSGs, UDRs
 * AKS cluster name & kubeconfig
-* MySQL FQDN & private endpoint
+* MySQL FQDN (VNet-integrated)
 * ACR login server
 
 ---

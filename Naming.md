@@ -79,9 +79,7 @@ Use keys from tfvars: `egress`, `aks`, `database`
 
 * Name: `<project>-<environment>-mysql`
 
-* Private Endpoint: `<project>-<environment>-db-pe`
-
-* Private Service Connection: `<project>-<environment>-db-psc`
+* Deployment: VNet-integrated via delegated database subnet
 
 * Tags: `environment`, `project`
 
@@ -135,7 +133,7 @@ All resource names should include the environment code (`dev`, `stage`, `prod`) 
 | ----- | ----- |
 | modules/network | VNet, subnets, NSGs, optional UDRs |
 | modules/aks | AKS cluster deployment |
-| modules/mysql | MySQL server and private endpoint |
+| modules/mysql | MySQL server with VNet integration |
 | modules/acr | Azure Container Registry |
 | modules/keyvault | Key Vault for secrets |
 | envs/ | Environment-specific tfvars |
@@ -177,8 +175,6 @@ All resource names should include the environment code (`dev`, `stage`, `prod`) 
 | AKS Cluster | cloudproj-dev-aks | cloudproj-stage-aks | cloudproj-prod-aks |
 | AKS Node Pool (default) | default (inside cluster) | default | default |
 | MySQL Flexible Server | cloudproj-dev-mysql | cloudproj-stage-mysql | cloudproj-prod-mysql |
-| MySQL Private Endpoint | cloudproj-dev-db-pe | cloudproj-stage-db-pe | cloudproj-prod-db-pe |
-| MySQL Private Service Connection | cloudproj-dev-db-psc | cloudproj-stage-db-psc | cloudproj-prod-db-psc |
 | Azure Container Registry (ACR) | cloudprojdevacr | cloudprojstageacr | cloudprojprodacr |
 | Key Vault | cloudproj-dev-kv | cloudproj-stage-kv | cloudproj-prod-kv |
 
