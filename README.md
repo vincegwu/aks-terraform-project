@@ -1,5 +1,9 @@
 # K8S Internal Developer Platform — Infrastructure (AKS) — Terraform
 
+![Security Scan](https://github.com/Dudubynatur3/Azure-Terraform-Project/workflows/AKS%20Terraform%20Pipeline/badge.svg)
+[![Checkov](https://img.shields.io/badge/security-checkov-blue)](https://www.checkov.io/)
+[![Terraform](https://img.shields.io/badge/terraform-1.7.5-purple)](https://www.terraform.io/)
+
 ## Project Overview
 
 This project provisions an AKS cluster with supporting infrastructure using Terraform, including:
@@ -10,6 +14,20 @@ This project provisions an AKS cluster with supporting infrastructure using Terr
 * Azure Container Registry (ACR)
 * Azure Key Vault for secrets
 * CI/CD-friendly setup with workspaces
+* **Automated security scanning with Checkov** ✅
+
+---
+
+## Security
+
+This project implements automated security scanning using Checkov to identify misconfigurations and vulnerabilities:
+
+- ✅ Scans all Terraform code on every commit
+- ✅ Blocks deployment on HIGH/CRITICAL findings
+- ✅ Generates detailed security reports
+- ✅ Enforces Azure security best practices
+
+See [SECURITY_SCANNING.md](docs/SECURITY_SCANNING.md) for details on fixing common security issues.
 
 ---
 
@@ -22,9 +40,11 @@ Principles:
 * Dev access limited to whitelisted IPs; Stage/Prod access via CI/CD.
 
 ## Project Structure
-
 ```
 aks-terraform-project/
+├─ .github/
+│  └─ workflows/
+│     └─ aks-terraform-pipeline.yml
 ├─ modules/
 │  ├─ network/
 │  ├─ aks/
@@ -35,11 +55,15 @@ aks-terraform-project/
 │  ├─ dev/
 │  ├─ stage/
 │  └─ prod/
+├─ docs/
+│  └─ SECURITY_SCANNING.md
 ├─ scripts/
 │  ├─ get-kubeconfig.sh
 │  ├─ setup-remote-backend.sh
 │  ├─ terraform.ps1
 │  └─ terraform.sh
+├─ .checkov.yml
+├─ .checkov.baseline.yml
 ├─ providers.tf
 ├─ variables.tf
 ├─ main.tf
@@ -51,15 +75,12 @@ aks-terraform-project/
 
 ---
 
-
-
 ## Automatic Environment Variable Workflow
 
 1. Terraform Workspaces isolate Dev, Stage, Prod
 2. Wrapper scripts automatically load the correct `terraform.tfvars` file based on the selected workspace.
 
 ### Example Usage:
-
 ```bash
 terraform workspace list
 terraform workspace select dev || terraform workspace new dev
@@ -128,7 +149,6 @@ Example:
 `cloudproj-dev-aks-nsg`
 
 #### **2.5 AKS Cluster**
-
 ```
 Name: <project>-<environment>-aks
 DNS Prefix: <project>-<environment>-aks
@@ -136,7 +156,6 @@ Node Pool: default
 ```
 
 #### **2.6 Azure MySQL Flexible Server**
-
 ```
 Name: <project>-<environment>-mysql
 Private Endpoint: <project>-<environment>-db-pe
@@ -144,7 +163,6 @@ Private Service Connection: <project>-<environment>-db-psc
 ```
 
 #### **2.7 Azure Container Registry (ACR)**
-
 ```
 <project><environment>acr
 ```
@@ -152,7 +170,6 @@ Private Service Connection: <project>-<environment>-db-psc
 (No hyphens allowed.)
 
 #### **2.8 Azure Key Vault**
-
 ```
 <project>-<environment>-kv
 ```
@@ -213,5 +230,6 @@ Tags must be applied consistently across all modules.
 
 * **DEPLOYMENT.md** – Full deployment steps
 * **DEVELOPER_GUIDE.md** – Cluster access, ACR usage, MySQL access, best practices
+* **SECURITY_SCANNING.md** – Security scanning guide and common fixes
 
 ---

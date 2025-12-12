@@ -1,0 +1,20 @@
+# Checkov Configuration for AKS Terraform Project
+
+directory:
+  - modules/
+  - envs/
+
+framework:
+  - terraform
+
+skip-path:
+  - .terraform/
+  - .git/
+  - scripts/
+
+soft-fail: false
+compact: true
+
+output:
+  - cli
+  - junitxml

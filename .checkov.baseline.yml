@@ -1,0 +1,10 @@
+# Checkov Baseline Configuration
+# This file can be used for suppressions in the future
+
+suppressions: []
+
+# To add suppressions later, use this format:
+# suppressions:
+#   - check: CKV_AZURE_97
+#     file_path: modules/aks/main.tf  
+#     reason: "Approved exception with justification"

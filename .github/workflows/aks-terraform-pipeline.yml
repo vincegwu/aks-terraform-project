@@ -22,6 +22,12 @@ env:
     TF_VERSION: '1.7.5'
     AZURE_REGION: 'australiacentral'
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+  security-events: write
+
 jobs:
   terraform-validate:
     name: Terraform Validation
@@ -48,10 +54,205 @@ jobs:
       - name: Terraform Validate
         run: terraform validate
 
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: terraform-validate
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Install jq (for JSON parsing)
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      # Batch 1: TFSec - Terraform Security Scanner
+      - name: Run TFSec Security Scan
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          soft_fail: true
+          format: json
+          out: tfsec-report.json
+
+      - name: Upload TFSec Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfsec-security-report
+          path: tfsec-report.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      # Batch 2: Checkov - Infrastructure as Code Security Scanner
+      - name: Run Checkov Scan
+        id: checkov
+        uses: bridgecrewio/checkov-action@v12.1347.0
+        with:
+          args: >
+            --directory . --framework terraform
+            -o json --output-file-path checkov-report.json
+            -o junitxml --output-file-path checkov-report.xml
+        continue-on-error: true
+
+      - name: Parse Checkov JSON for HIGH/CRITICAL
+        id: parse_checkov
+        run: |
+          if [ -f checkov-report.json ]; then
+            HIGH_COUNT=$(jq '[.results.failed_checks[] | select(.severity=="HIGH" or .severity=="CRITICAL")] | length' checkov-report.json)
+          else
+            HIGH_COUNT=0
+          fi
+          echo "high_count=$HIGH_COUNT" >> $GITHUB_OUTPUT
+
+      - name: Upload Checkov Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkov-security-report
+          path: |
+            checkov-report.json
+            checkov-report.xml
+          if-no-files-found: warn
+          retention-days: 30
+
+      # Batch 3: Trivy - Vulnerability Scanner
+      - name: Run Trivy IaC Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: '.'
+          format: 'json'
+          output: 'trivy-report.json'
+          exit-code: '0'
+
+      - name: Upload Trivy Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-security-report
+          path: trivy-report.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      # Batch 4: KICS - Keeping Infrastructure as Code Secure
+      - name: Run KICS Scan
+        uses: checkmarx/kics-github-action@v1.7.0
+        with:
+          path: '.'
+          output_path: 'kics-results'
+          output_formats: 'json,sarif'
+          fail_on: high,critical
+        continue-on-error: true
+
+      - name: Upload KICS Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kics-security-report
+          path: kics-results/
+          if-no-files-found: warn
+          retention-days: 30
+
+      # Aggregate Results and Comment on PR
+      - name: Aggregate Security Scan Results
+        id: aggregate
+        run: |
+          echo "## Security Scan Summary" > scan-summary.md
+          echo "" >> scan-summary.md
+          
+          # Checkov
+          CHECKOV_HIGH=${{ steps.parse_checkov.outputs.high_count }}
+          echo "### Checkov: $CHECKOV_HIGH HIGH/CRITICAL findings" >> scan-summary.md
+          
+          # TFSec
+          if [ -f tfsec-report.json ]; then
+            TFSEC_COUNT=$(jq '[.results[] | select(.severity=="CRITICAL" or .severity=="HIGH")] | length' tfsec-report.json || echo "0")
+            echo "### TFSec: $TFSEC_COUNT HIGH/CRITICAL findings" >> scan-summary.md
+          fi
+          
+          # Trivy
+          if [ -f trivy-report.json ]; then
+            TRIVY_COUNT=$(jq '[.Results[]?.Misconfigurations[]? | select(.Severity=="CRITICAL" or .Severity=="HIGH")] | length' trivy-report.json || echo "0")
+            echo "### Trivy: $TRIVY_COUNT HIGH/CRITICAL findings" >> scan-summary.md
+          fi
+          
+          # Calculate total
+          TOTAL_HIGH=$((CHECKOV_HIGH + ${TFSEC_COUNT:-0} + ${TRIVY_COUNT:-0}))
+          echo "total_high=$TOTAL_HIGH" >> $GITHUB_OUTPUT
+          
+          cat scan-summary.md
+
+      - name: Comment PR with Consolidated Scan Summary
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/github-script@v7
+        continue-on-error: true
+        with:
+          script: |
+            const totalHigh = parseInt('${{ steps.aggregate.outputs.total_high }}') || 0;
+            const checkovHigh = parseInt('${{ steps.parse_checkov.outputs.high_count }}') || 0;
+            const emoji = totalHigh > 0 ? '⚠️' : '✅';
+            const statusText = totalHigh > 0 ? `${totalHigh} HIGH/CRITICAL issues found` : 'No HIGH/CRITICAL issues found';
+            const runUrl = `https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}`;
+            
+            const body = `## ${emoji} Security Scan Results
+            
+            **Status:** ${statusText}
+            
+            ### Scan Tools Summary
+            
+            | Tool | HIGH/CRITICAL Findings |
+            |------|------------------------|
+            | 🔍 Checkov | ${checkovHigh} |
+            | 🛡️ TFSec | Scan completed |
+            | 🔐 Trivy | Scan completed |
+            | 🔒 KICS | Scan completed |
+            
+            ${totalHigh > 0 ? '> ⚠️ **This PR is blocked** until HIGH/CRITICAL issues are resolved.\n' : ''}
+            
+            📊 **Detailed Reports:** [View artifacts in workflow run](${runUrl})
+            
+            <details>
+            <summary>📦 Available Artifacts</summary>
+            
+            - \`checkov-security-report\` (JSON + XML)
+            - \`tfsec-security-report\` (JSON)
+            - \`trivy-security-report\` (JSON)
+            - \`kics-security-report\` (JSON + SARIF)
+            
+            </details>
+            `;
+            
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+      
+      - name: Log scan results (for forked PRs)
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        run: |
+          echo "## Consolidated Security Scan Summary"
+          echo "Total HIGH/CRITICAL findings: ${{ steps.aggregate.outputs.total_high }}"
+          echo ""
+          echo "Note: Running from a fork - cannot post PR comments due to GitHub security restrictions."
+          echo "Please check the Actions tab for detailed results and artifacts."
+
+      - name: Fail on HIGH/CRITICAL findings
+        if: steps.aggregate.outputs.total_high != '0'
+        run: |
+          echo "❌ Failing job: ${{ steps.aggregate.outputs.total_high }} total HIGH/CRITICAL findings detected across all scanners."
+          exit 1
+
   terraform-plan:
     name: Terraform Plan
     runs-on: ubuntu-latest
-    needs: terraform-validate
+    needs: security-scan
     if: github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     environment: ${{ github.event_name == 'push' && 'dev' || github.event.inputs.environment }}
     env:
@@ -154,4 +355,3 @@ jobs:
       
       - name: Terraform Apply
         run: terraform apply -auto-approve tfplan
-
