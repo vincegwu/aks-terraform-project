@@ -15,5 +15,5 @@ output "nsg_ids" {
 }
 
 output "route_table_ids" {
-  value = azurerm_route_table.private[*].id
+  value = length(azurerm_route_table.private) > 0 ? azurerm_route_table.private[*].id : []
 }

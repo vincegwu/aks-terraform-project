@@ -9,15 +9,15 @@ variable "resource_group_name" {
 }
 
 variable "project_name" {
-  type        = string
+  type = string
 }
 
 variable "environment" {
-  type        = string
+  type = string
 }
 
 variable "location" {
-  type        = string
+  type = string
 }
 
 variable "aks_node_count" {
@@ -39,8 +39,8 @@ variable "aks_max_count" {
 }
 
 variable "aks_version" {
-  type        = string
-  default     = "latest"
+  type    = string
+  default = "latest"
 }
 
 variable "availability_zones" {

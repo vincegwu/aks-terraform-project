@@ -40,13 +40,13 @@ resource "azurerm_subnet_network_security_group_association" "subnet_nsg_assoc" 
 # Network Security Rules
 # Allow DB (MySQL) traffic only from the AKS subnet to the database subnet
 resource "azurerm_network_security_rule" "db_allow_from_aks" {
-  count               = contains(keys(var.subnets), "database") && contains(keys(var.subnets), "aks") ? 1 : 0
-  name                = "${var.project_name}-${var.environment}-allow-db-from-aks"
-  priority            = 100
-  direction           = "Inbound"
-  access              = "Allow"
-  protocol            = "Tcp"
-  source_port_range   = "*"
+  count                  = contains(keys(var.subnets), "database") && contains(keys(var.subnets), "aks") ? 1 : 0
+  name                   = "${var.project_name}-${var.environment}-allow-db-from-aks"
+  priority               = 100
+  direction              = "Inbound"
+  access                 = "Allow"
+  protocol               = "Tcp"
+  source_port_range      = "*"
   destination_port_range = "3306"
 
   # Use the AKS subnet first prefix as the source CIDR
@@ -59,13 +59,13 @@ resource "azurerm_network_security_rule" "db_allow_from_aks" {
 
 # AKS inbound hardening: allow Azure LB and VNet, then deny Internet
 resource "azurerm_network_security_rule" "aks_allow_azure_lb" {
-  count               = contains(keys(var.subnets), "aks") ? 1 : 0
-  name                = "${var.project_name}-${var.environment}-aks-allow-azurelb"
-  priority            = 100
-  direction           = "Inbound"
-  access              = "Allow"
-  protocol            = "*"
-  source_port_range   = "*"
+  count                  = contains(keys(var.subnets), "aks") ? 1 : 0
+  name                   = "${var.project_name}-${var.environment}-aks-allow-azurelb"
+  priority               = 100
+  direction              = "Inbound"
+  access                 = "Allow"
+  protocol               = "*"
+  source_port_range      = "*"
   destination_port_range = "*"
 
   source_address_prefix      = "AzureLoadBalancer"
@@ -76,13 +76,13 @@ resource "azurerm_network_security_rule" "aks_allow_azure_lb" {
 }
 
 resource "azurerm_network_security_rule" "aks_allow_vnet" {
-  count               = contains(keys(var.subnets), "aks") ? 1 : 0
-  name                = "${var.project_name}-${var.environment}-aks-allow-vnet"
-  priority            = 110
-  direction           = "Inbound"
-  access              = "Allow"
-  protocol            = "*"
-  source_port_range   = "*"
+  count                  = contains(keys(var.subnets), "aks") ? 1 : 0
+  name                   = "${var.project_name}-${var.environment}-aks-allow-vnet"
+  priority               = 110
+  direction              = "Inbound"
+  access                 = "Allow"
+  protocol               = "*"
+  source_port_range      = "*"
   destination_port_range = "*"
 
   source_address_prefix      = "VirtualNetwork"
@@ -93,13 +93,13 @@ resource "azurerm_network_security_rule" "aks_allow_vnet" {
 }
 
 resource "azurerm_network_security_rule" "aks_deny_internet" {
-  count               = contains(keys(var.subnets), "aks") ? 1 : 0
-  name                = "${var.project_name}-${var.environment}-aks-deny-internet"
-  priority            = 120
-  direction           = "Inbound"
-  access              = "Deny"
-  protocol            = "*"
-  source_port_range   = "*"
+  count                  = contains(keys(var.subnets), "aks") ? 1 : 0
+  name                   = "${var.project_name}-${var.environment}-aks-deny-internet"
+  priority               = 120
+  direction              = "Inbound"
+  access                 = "Deny"
+  protocol               = "*"
+  source_port_range      = "*"
   destination_port_range = "*"
 
   source_address_prefix      = "Internet"
@@ -118,9 +118,9 @@ resource "azurerm_route_table" "private" {
 }
 
 resource "azurerm_subnet_route_table_association" "private_assoc" {
-  for_each = { for k, v in azurerm_subnet.subnets : k => v if k == "aks" || k == "database" }
+  for_each       = { for k, v in azurerm_subnet.subnets : k => v if k == "aks" || k == "database" }
   subnet_id      = each.value.id
-  route_table_id = element(azurerm_route_table.private[*].id, 0)  # simple association, can customize per subnet
+  route_table_id = element(azurerm_route_table.private[*].id, 0) # simple association, can customize per subnet
 }
 
 # NAT Gateway resources for egress (created only when an `egress` subnet is defined)
@@ -134,19 +134,19 @@ resource "azurerm_public_ip" "nat_ip" {
 }
 
 resource "azurerm_nat_gateway" "nat" {
-  count                = contains(keys(var.subnets), "egress") ? 1 : 0
-  name                 = "${var.project_name}-${var.environment}-nat"
-  location             = azurerm_resource_group.rg.location
-  resource_group_name  = azurerm_resource_group.rg.name
-  sku_name             = "Standard"
+  count               = contains(keys(var.subnets), "egress") ? 1 : 0
+  name                = "${var.project_name}-${var.environment}-nat"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  sku_name            = "Standard"
 }
 
 # Associate Public IP(s) to the NAT Gateway using the association resource
 resource "azurerm_nat_gateway_public_ip_association" "nat_ip_assoc" {
   count = contains(keys(var.subnets), "egress") ? length(azurerm_public_ip.nat_ip) : 0
 
-  nat_gateway_id        = azurerm_nat_gateway.nat[0].id
-  public_ip_address_id  = element(azurerm_public_ip.nat_ip[*].id, count.index)
+  nat_gateway_id       = azurerm_nat_gateway.nat[0].id
+  public_ip_address_id = element(azurerm_public_ip.nat_ip[*].id, count.index)
 }
 
 # Associate the NAT gateway with the egress subnet when present

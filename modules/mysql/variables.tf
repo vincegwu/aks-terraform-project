@@ -14,7 +14,7 @@ variable "vnet_id" {
 
 variable "project_name" { type = string }
 variable "environment" { type = string }
-variable "location"    { type = string }
+variable "location" { type = string }
 
 variable "unique_suffix" {
   type        = string
@@ -29,5 +29,5 @@ variable "mysql_sku_name" {
   description = "SKU name for MySQL Flexible Server (e.g., GP_Standard_D2ds_v4 for GeneralPurpose)."
   type        = string
   # Use a provider-compatible SKU. Format: <tier>_<family>_<version>
-  default     = "GP_Standard_D2ds_v4"
+  default = "GP_Standard_D2ds_v4"
 }
