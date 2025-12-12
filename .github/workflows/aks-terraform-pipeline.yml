@@ -31,6 +31,11 @@ on:
                     - stage 
                     - prod
 
+permissions:
+  contents: read
+  actions: write
+  id-token: write
+
 env:
     TF_VERSION: '1.7.5'
     AZURE_REGION: 'australiacentral'
