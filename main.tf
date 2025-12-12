@@ -57,4 +57,5 @@ module "keyvault" {
   }
   private_subnet_id       = lookup(module.network.subnet_ids, "aks", "")
   enable_private_endpoint = var.create_private_endpoints
+  allowed_ip_ranges       = [] # Empty list for now, can be configured per environment
 }

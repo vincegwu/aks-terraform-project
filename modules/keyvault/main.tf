@@ -11,19 +11,19 @@ resource "random_string" "suffix" {
 }
 
 resource "azurerm_key_vault" "kv" {
-  name                       = "${var.project_name}-${var.environment}-kv-${random_string.suffix.result}"
-  location                   = var.location
-  resource_group_name        = var.resource_group_name
-  sku_name                   = var.sku
-  tenant_id                  = data.azurerm_client_config.current.tenant_id
-  soft_delete_retention_days = 7
-  purge_protection_enabled   = true
-  public_network_access_enabled = length(var.allowed_ip_ranges) > 0 ? true : (var.enable_private_endpoint ? false : true)
-  tags                       = var.tags
+  name                          = "${var.project_name}-${var.environment}-kv-${random_string.suffix.result}"
+  location                      = var.location
+  resource_group_name           = var.resource_group_name
+  sku_name                      = var.sku
+  tenant_id                     = data.azurerm_client_config.current.tenant_id
+  soft_delete_retention_days    = 7
+  purge_protection_enabled      = true
+  public_network_access_enabled = var.enable_private_endpoint ? false : true
+  tags                          = var.tags
 
   network_acls {
     bypass         = "AzureServices"
-    default_action = var.enable_private_endpoint || length(var.allowed_ip_ranges) == 0 ? "Deny" : "Deny"
+    default_action = var.enable_private_endpoint ? "Deny" : (length(var.allowed_ip_ranges) > 0 ? "Deny" : "Allow")
     ip_rules       = var.allowed_ip_ranges
   }
 
