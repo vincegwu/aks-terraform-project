@@ -19,6 +19,7 @@ on:
         - 'modules/**'
         - '*.tf'
         - 'envs/**'
+        - '.github/workflows/**'
     workflow_dispatch:
         inputs:
             environment:
