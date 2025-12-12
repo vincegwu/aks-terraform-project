@@ -111,7 +111,7 @@ To manage container images, developers need to authenticate with the Azure Conta
 
 Access to the Azure MySQL Flexible Server is highly restricted, leveraging a secure, private network configuration.
 
-* **Network Security:** The MySQL server resides in a **private subnet** and is accessed via a **private endpoint (PE)**. This architecture ensures that traffic never leaves the Azure backbone.
+* **Network Security:** The MySQL server is deployed directly into a **delegated subnet** using VNet integration. This architecture ensures that traffic never leaves the Azure backbone and provides native private connectivity.
 * **Access Control:** Developers can only connect from **whitelisted IPs**. In the Dev environment, this often means your workstation's IP or a designated jump host IP must be explicitly allowed in the NSG rules for the `database subnet`.
 * **Security:** Database credentials (`username`, `password`) are stored securely in **Azure Key Vault** and should be read dynamically for connection (e.g., using a small script or retrieving them manually for client setup).
 
