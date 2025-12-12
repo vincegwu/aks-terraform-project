@@ -23,7 +23,10 @@ variable "unique_suffix" {
 }
 
 variable "mysql_admin_username" { type = string }
-variable "mysql_admin_password" { type = string }
+variable "mysql_admin_password" { 
+  type      = string
+  sensitive = true
+}
 
 variable "mysql_sku_name" {
   description = "SKU name for MySQL Flexible Server (e.g., GP_Standard_D2ds_v4 for GeneralPurpose)."
