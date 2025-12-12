@@ -198,11 +198,12 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const ref = context.ref.replace('refs/heads/', '');
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'app-deployment.yml',
-              ref: context.ref,
+              ref: ref,
               inputs: {
                 environment: '${{ steps.set-env.outputs.environment }}',
                 run_id: '${{ github.run_id }}',
