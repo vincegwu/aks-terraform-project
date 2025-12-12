@@ -1,5 +1,3 @@
-data "azurerm_client_config" "current" {}
-
 resource "azurerm_kubernetes_cluster" "aks" {
   name                    = "${var.project_name}-${var.environment}-aks"
   location                = var.location
@@ -30,8 +28,12 @@ resource "azurerm_kubernetes_cluster" "aks" {
   }
 
   azure_active_directory_role_based_access_control {
-    tenant_id          = data.azurerm_client_config.current.tenant_id
+    managed            = true
     azure_rbac_enabled = true
+  }
+
+  oms_agent {
+    log_analytics_workspace_id = var.log_analytics_workspace_id
   }
 
   azure_policy_enabled              = true
@@ -42,3 +44,19 @@ resource "azurerm_kubernetes_cluster" "aks" {
     project     = var.project_name
   }
 }
+
+# Log Analytics Workspace for Azure Monitor Container Insights
+resource "azurerm_log_analytics_workspace" "aks" {
+  name                = "${var.project_name}-${var.environment}-aks-workspace"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+  sku                 = "PerGB2018"
+  retention_in_days   = 30
+
+  tags = {
+    environment = var.environment
+    project     = var.project_name
+  }
+}
+
+# Attach AKS to Log Analytics using oms_agent (configured above in azurerm_kubernetes_cluster)

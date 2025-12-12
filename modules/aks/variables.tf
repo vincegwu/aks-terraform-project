@@ -54,3 +54,8 @@ variable "vm_size" {
   type        = string
   default     = "Standard_D2s_v3"
 }
+variable "enable_private_cluster" {
+  type        = bool
+  description = "Enable private cluster (API server accessible only via private network)"
+  default     = true
+}

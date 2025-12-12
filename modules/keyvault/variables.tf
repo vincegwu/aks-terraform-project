@@ -20,3 +20,9 @@ variable "enable_private_endpoint" {
   description = "Set to true to create an optional Private Endpoint for Key Vault. Keep false to skip creating the Private Endpoint."
   default     = false
 }
+
+variable "allowed_ip_ranges" {
+  type        = list(string)
+  description = "List of allowed IP ranges for Key Vault firewall. Empty list denies all public access."
+  default     = []
+}

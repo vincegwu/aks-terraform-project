@@ -18,3 +18,7 @@ mysql_admin_username = "adminuser"
 # Example: in GitHub Actions use `${{ secrets.PROD_MYSQL_PASSWORD }}` and pass
 # it as `-var="mysql_admin_password=${{ secrets.PROD_MYSQL_PASSWORD }}"`
 # mysql_admin_password = "<SET_IN_CI>"
+
+# Security settings - ENABLED for prod environment (production-grade security)
+create_private_endpoints   = true
+enable_private_aks_cluster = true

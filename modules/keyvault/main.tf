@@ -18,7 +18,14 @@ resource "azurerm_key_vault" "kv" {
   tenant_id                  = data.azurerm_client_config.current.tenant_id
   soft_delete_retention_days = 7
   purge_protection_enabled   = true
+  public_network_access_enabled = length(var.allowed_ip_ranges) > 0 ? true : (var.enable_private_endpoint ? false : true)
   tags                       = var.tags
+
+  network_acls {
+    bypass         = "AzureServices"
+    default_action = var.enable_private_endpoint || length(var.allowed_ip_ranges) == 0 ? "Deny" : "Deny"
+    ip_rules       = var.allowed_ip_ranges
+  }
 
   # Recommended access policy block can be added here if needed
 }

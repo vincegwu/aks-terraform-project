@@ -3,8 +3,9 @@ output "aks_cluster_name" {
 }
 
 output "aks_kube_config" {
-  # Use the admin kubeconfig raw attribute from the AKS resource
-  value = azurerm_kubernetes_cluster.aks.kube_admin_config_raw
+  # Use Azure AD kubeconfig (local accounts disabled)
+  value     = azurerm_kubernetes_cluster.aks.kube_config_raw
+  sensitive = true
 }
 
 output "aks_fqdn" {

@@ -2,65 +2,297 @@
 
 ## DEPLOYMENT INSTRUCTIONS
 
-This guide provides the steps for initializing, deploying, verifying, and cleaning up the infrastructure across **Dev**, **Stage**, and **Prod** environments using the provided Terraform scripts and workspace workflow.
+This guide provides comprehensive deployment options for the **Dev**, **Stage**, and **Prod** environments. Choose between automated GitHub Actions workflows (recommended) or manual local deployments.
 
 ---
 
-### 1. Prerequisites
+## 📋 Deployment Options
 
-Ensure you have the following tools installed and configured locally:
+### Option A: GitHub Actions (Recommended) 🤖
 
-* **Azure subscription**
-* **Terraform** (version $\geq 1.6$)
-* **Azure CLI** (Authenticated to your target subscription)
+Automated CI/CD deployment using GitHub Actions workflows for consistent, reproducible deployments.
+
+### Option B: Manual Local Deployment 💻
+
+Direct deployment from your workstation using Terraform CLI and wrapper scripts.
+
+---
+
+## 🤖 Option A: GitHub Actions Deployment
+
+### Prerequisites
+
+* **GitHub Repository** with the project code
+* **Azure Service Principal** configured with required permissions
+* **GitHub Secrets** configured (see Secret Configuration below)
+
+### Required GitHub Secrets
+
+Configure the following secrets in your GitHub repository (`Settings > Secrets and variables > Actions`):
+
+| Secret Name | Description | Example/Format |
+|------------|-------------|----------------|
+| `AZURE_CREDENTIALS` | Azure service principal credentials (JSON format) | `{"clientId":"...","clientSecret":"...","subscriptionId":"...","tenantId":"..."}` |
+| `AZURE_CLIENT_ID` | Azure service principal client ID | `12345678-1234-1234-1234-123456789abc` |
+| `AZURE_CLIENT_SECRET` | Azure service principal client secret | `your-client-secret` |
+| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID | `12345678-1234-1234-1234-123456789abc` |
+| `AZURE_TENANT_ID` | Azure tenant ID | `12345678-1234-1234-1234-123456789abc` |
+| `TF_BACKEND_RESOURCE_GROUP` | Terraform backend resource group | `terraform-state-rg` |
+| `TF_BACKEND_STORAGE_ACCOUNT` | Terraform backend storage account | `tfstate1234` |
+| `TF_BACKEND_CONTAINER` | Terraform backend container name | `tfstate` |
+| `MYSQL_ADMIN_USERNAME` | MySQL administrator username | `adminuser` |
+| `MYSQL_ADMIN_PASSWORD` | MySQL administrator password | `StrongPassword123!` |
+
+### Workflow Chain
+
+The project uses a two-stage automated workflow:
+
+```
+Push to main → Infrastructure Deploy → Application Deploy (auto-triggered) → Manual Destroy
+```
+
+#### 1. Infrastructure Deployment Workflow
+
+**File:** `.github/workflows/aks-terraform-pipeline.yml`
+
+**Triggers:**
+- **Push to `main` branch** (auto-deploys to `dev`)
+- **Pull Request** (validation only, no deployment)
+- **Manual trigger via `workflow_dispatch`** (choose environment)
+
+**Jobs:**
+1. **Terraform Validation** - Format check, init, and validate
+2. **Terraform Plan** - Generate execution plan with remote state
+3. **Terraform Apply** - Deploy infrastructure and export outputs
+4. **Trigger Application Deployment** - Automatically calls app-deployment workflow
+
+**Manual Deployment:**
+1. Go to **Actions** tab in GitHub
+2. Select **Infrastructure Deployment** workflow
+3. Click **Run workflow**
+4. Choose environment (`dev`, `stage`, or `prod`)
+5. Click **Run workflow** button
+
+**Automatic Deployment:**
+- Push changes to `main` branch
+- Workflow automatically deploys to `dev` environment
+- Application deployment is auto-triggered on success
+
+#### 2. Application Deployment Workflow
+
+**File:** `.github/workflows/app-deployment.yml`
+
+**Triggers:**
+- **Automatically triggered** by Infrastructure Deployment on success
+- **Manual trigger via `workflow_dispatch`** (for redeployments)
+
+**Configuration:**
+- **Application Repository:** `pravinmishraaws/book-review-app` (configurable)
+- **Application Branch:** `main` (configurable)
+- **Dockerfile Paths:** 
+  - Backend: `book-review-app/backend/Dockerfile`
+  - Frontend: `book-review-app/frontend/Dockerfile`
+
+**Jobs:**
+1. **Build and Push Images**
+   - Clones application repository
+   - Builds Docker images for frontend and backend
+   - Pushes images to Azure Container Registry (ACR)
+   - Exports infrastructure details
+
+2. **Deploy to AKS**
+   - Gets AKS credentials from Terraform outputs
+   - Updates Kubernetes manifests with image tags and MySQL FQDN
+   - Creates namespace and secrets
+   - Deploys backend and frontend services
+   - Exposes frontend via LoadBalancer (gets public IP)
+
+**Manual Application Redeployment:**
+1. Go to **Actions** tab in GitHub
+2. Select **Application Deployment** workflow
+3. Click **Run workflow**
+4. Configure:
+   - Environment: `dev`, `stage`, or `prod`
+   - Frontend image tag: `latest` or custom tag
+   - Backend image tag: `latest` or custom tag
+   - Application repository (optional): `owner/repo`
+   - Application branch (optional): `main`
+5. Click **Run workflow**
+
+### Deployment Workflow Results
+
+After successful deployment, check the workflow run logs for:
+- ✅ **ACR Login Server:** `<acr-name>.azurecr.io`
+- ✅ **AKS Cluster Name:** `cloudproj-<env>-aks`
+- ✅ **Resource Group:** `cloudproj-<env>-rg`
+- ✅ **MySQL FQDN:** `cloudproj-<env>-mysql-<suffix>.mysql.database.azure.com`
+- ✅ **Frontend URL:** `http://<external-ip>` (available after LoadBalancer provisioning)
+- ✅ **Backend URL (internal):** `http://book-review-backend:8080`
+
+### Monitoring Deployment
+
+1. **GitHub Actions UI:**
+   - View real-time logs for each job
+   - Check job status and artifacts
+
+2. **Azure Portal:**
+   - Navigate to resource group: `cloudproj-<env>-rg`
+   - Verify resources: AKS, ACR, MySQL, VNet, NSGs
+
+3. **kubectl (after deployment):**
+   ```bash
+   # Get AKS credentials
+   az aks get-credentials \
+     --resource-group cloudproj-<env>-rg \
+     --name cloudproj-<env>-aks
+   
+   # Check pods
+   kubectl get pods -n book-review-<env>
+   
+   # Get frontend URL
+   kubectl get svc book-review-frontend -n book-review-<env>
+   ```
+
+---
+
+## 💻 Option B: Manual Local Deployment
+
+### Prerequisites
+
+* **Azure subscription** with required permissions
+* **Terraform** (version ≥ 1.7.5)
+* **Azure CLI** (authenticated to your target subscription)
 * **kubectl** (Kubernetes command-line tool)
+* **Docker** (for building and pushing images)
 
----
-
-### 2. Initialize Terraform
-
-Navigate to the root directory of the project (`aks-terraform-project/`) and initialize the backend and provider plugins.
+### 1. Azure CLI Authentication
 
 ```bash
-terraform init
+# Login to Azure
+az login
+
+# Set subscription
+az account set --subscription <subscription-id>
+
+# Verify
+az account show
 ```
 
-### 3. Select or Create Workspace
-
-Use **Terraform Workspaces** to isolate the state for each environment. You must select the target workspace before running `plan` or `apply`.
+### 2. Initialize Terraform with Remote Backend
 
 ```bash
-# List all available workspaces
-terraform workspace list
+# Navigate to project root
+cd aks-terraform-project
 
-# Select the 'dev' workspace. If it doesn't exist, create it.
-terraform workspace new dev || terraform workspace select dev
-
+# Initialize with backend configuration
+terraform init \
+  -backend-config="resource_group_name=<backend-rg>" \
+  -backend-config="storage_account_name=<backend-storage>" \
+  -backend-config="container_name=tfstate" \
+  -backend-config="key=dev/terraform.tfstate"
 ```
 
-### 4. Deploy Using Wrapper Script
+### 3. Deploy Infrastructure
 
-The wrapper scripts (`terraform.ps1` or `terraform.sh`) automatically load the correct **.tfvars** file based on the currently selected workspace, eliminating manual variable input.
-
-#### 🖥️ PowerShell (Windows)
-
-```powershell
-.\scripts\terraform.ps1 plan
-.\scripts\terraform.ps1 apply -auto-approve
-```
-
-#### 🐧 Bash / Linux / macOS
 ```bash
+# Using wrapper script (auto-loads correct tfvars)
 ./scripts/terraform.sh plan
 ./scripts/terraform.sh apply -auto-approve
+
+# Or manual with explicit var file
+terraform plan -var-file="envs/dev/terraform.tfvars"
+terraform apply -var-file="envs/dev/terraform.tfvars" -auto-approve
 ```
 
-💡 The script automatically loads the correct ".tfvars" file based on the workspace.
+### 4. Deploy Application Manually
 
-Here is the content for the "Verify Deployment" section, correctly formatted in Markdown, which is suitable for your `DEPLOYMENT.md` file:
+#### Step 1: Get Infrastructure Outputs
 
+```bash
+# Get Terraform outputs
+terraform output -json > terraform-outputs.json
 
-### 5. Verify Deployment
+# Extract values
+ACR_LOGIN_SERVER=$(terraform output -raw acr_login_server)
+ACR_NAME=$(terraform output -raw acr_name)
+AKS_CLUSTER_NAME=$(terraform output -raw aks_cluster_name)
+RESOURCE_GROUP=$(terraform output -raw resource_group_name)
+MYSQL_FQDN=$(terraform output -raw mysql_fqdn)
+```
+
+#### Step 2: Clone Application Repository
+
+```bash
+# Clone the book-review-app repository
+git clone https://github.com/pravinmishraaws/book-review-app.git
+
+cd book-review-app
+```
+
+#### Step 3: Build and Push Docker Images
+
+```bash
+# Login to ACR
+az acr login --name $ACR_NAME
+
+# Build and push backend
+docker build -t $ACR_LOGIN_SERVER/book-review-backend:latest ./backend
+docker push $ACR_LOGIN_SERVER/book-review-backend:latest
+
+# Build and push frontend
+docker build -t $ACR_LOGIN_SERVER/book-review-frontend:latest ./frontend
+docker push $ACR_LOGIN_SERVER/book-review-frontend:latest
+
+# Verify images
+az acr repository list --name $ACR_NAME --output table
+```
+
+#### Step 4: Deploy to AKS
+
+```bash
+# Get AKS credentials
+az aks get-credentials \
+  --resource-group $RESOURCE_GROUP \
+  --name $AKS_CLUSTER_NAME \
+  --overwrite-existing
+
+# Create namespace
+kubectl create namespace book-review-dev
+
+# Set context to namespace
+kubectl config set-context --current --namespace=book-review-dev
+
+# Create secrets
+kubectl create secret generic book-review-secrets \
+  --from-literal=database_user=<mysql-username> \
+  --from-literal=database_password=<mysql-password>
+
+# Update K8s manifests with your values
+cd ../aks-terraform-project/k8s
+
+# Update deployments with ACR image paths
+sed -i "s|<ACR_NAME>\.azurecr\.io|$ACR_LOGIN_SERVER|g" deployments/*.yaml
+
+# Update configmap with MySQL FQDN
+sed -i "s|<MYSQL_FQDN>|$MYSQL_FQDN|g" configmaps/app-config.yaml
+
+# Apply manifests
+kubectl apply -f configmaps/app-config.yaml
+kubectl apply -f deployments/backend-deployment.yaml
+kubectl apply -f services/backend-service.yaml
+kubectl apply -f deployments/frontend-deployment.yaml
+kubectl apply -f services/frontend-service.yaml
+
+# Wait for pods to be ready
+kubectl wait --for=condition=ready pod -l app=book-review --timeout=300s
+
+# Get frontend URL
+kubectl get svc book-review-frontend
+```
+
+---
+
+## 🔍 Verify Deployment
 
 After a successful deployment (`apply`), use the following steps to verify the cluster connectivity and access to core services in the **Dev** environment.
 
@@ -188,53 +420,159 @@ kubectl delete deployment sample-app
 kubectl delete service sample-app-service
 ```
 
- ### 6. Deploy Stage / Prod
+---
 
-Repeat the deployment steps for Stage and Production environments. Ensure you switch the active **Terraform Workspace** before running the plan and apply commands for each target environment.
+## 🚀 Deploy to Stage / Production
 
-#### Deploy Stage
+### Via GitHub Actions (Recommended)
+
+1. Go to **Actions** tab
+2. Select **Infrastructure Deployment**
+3. Click **Run workflow**
+4. Select environment: `stage` or `prod`
+5. Application deployment triggers automatically
+
+### Via Local Deployment
+
+For Stage or Production, use the same manual steps but with different environment:
 
 ```bash
-terraform workspace select stage || terraform workspace new stage
-./scripts/terraform.sh plan
-./scripts/terraform.sh apply
+# Deploy Stage
+terraform init -backend-config="key=stage/terraform.tfstate"
+terraform plan -var-file="envs/stage/terraform.tfvars"
+terraform apply -var-file="envs/stage/terraform.tfvars"
+
+# Deploy Production
+terraform init -backend-config="key=prod/terraform.tfstate"
+terraform plan -var-file="envs/prod/terraform.tfvars"
+terraform apply -var-file="envs/prod/terraform.tfvars
 ```
 
-#### Deploy Production
+```
+
+⚠️ **Production Warning:** Stage and Prod environments should be deployed via GitHub Actions pipelines for security and auditability.
+
+---
+
+## 🗑️ Destroy Infrastructure
+
+### Via GitHub Actions
+
+A dedicated destroy workflow can be created, or use manual local destroy.
+
+### Via Local Terraform
 
 ```bash
-terraform workspace select prod || terraform workspace new prod
-./scripts/terraform.sh plan
-./scripts/terraform.sh apply
+# Ensure you're on the correct environment
+terraform init -backend-config="key=dev/terraform.tfstate"
+
+# Review what will be destroyed
+terraform plan -destroy -var-file="envs/dev/terraform.tfvars"
+
+# Execute destroy
+terraform destroy -var-file="envs/dev/terraform.tfvars" -auto-approve
+
+# Or using wrapper script
+./scripts/terraform.sh destroy
 ```
-⚠️ Stage and Prod environments are highly restricted. They should typically be deployed via automated CI/CD pipelines using service principals, NOT via direct developer workstation access.
 
+⚠️ **Warning:** This will permanently delete all resources in the selected environment.
 
-### 7. Clean-up (Optional)
+---
 
-To destroy all deployed infrastructure and avoid incurring further Azure costs, use the `destroy` command via the wrapper script.
+## 📊 Deployment Summary
 
-1.  **Select Target Environment:** Switch to the workspace you wish to destroy.
+### What Gets Deployed
 
-    ```bash
-    terraform workspace select dev
-    ```
+**Infrastructure (Terraform):**
+- ✅ Resource Group
+- ✅ Virtual Network with subnets (egress, aks, database)
+- ✅ NAT Gateway for outbound connectivity
+- ✅ Network Security Groups (NSGs)
+- ✅ Azure Kubernetes Service (AKS) cluster
+- ✅ Azure Container Registry (ACR)
+- ✅ Azure MySQL Flexible Server (private endpoint)
+- ✅ Azure Key Vault (secrets management)
+- ✅ Private DNS zones and links
 
-2.  **Execute Destroy:** The script will automatically load the correct variables and prompt you to confirm the destruction of all resources defined in that workspace state.
+**Application (Kubernetes):**
+- ✅ Backend service (Node.js/Java/Python - from book-review-app repo)
+- ✅ Frontend service (React/Angular/HTML - from book-review-app repo)
+- ✅ LoadBalancer for public access
+- ✅ ConfigMaps and Secrets
+- ✅ Health checks and resource limits
 
-    ```bash
-    ./scripts/terraform.sh destroy
-    ```
+### Access Points
 
-*Repeat the `select` and `destroy` steps for the **Stage** and **Prod** workspaces if required.*
+After successful deployment:
 
-### 8. Best Practices 🛡️
+| Service | Access Method | URL/Endpoint |
+|---------|---------------|--------------|
+| Frontend | Public LoadBalancer | `http://<external-ip>` |
+| Backend | Internal (ClusterIP) | `http://book-review-backend:8080` |
+| AKS Dashboard | kubectl proxy | `http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/` |
+| ACR | Azure CLI | `az acr login --name <acr-name>` |
+| MySQL | Private Endpoint | `<mysql-fqdn>:3306` (from within VNet) |
 
-Following these practices ensures a secure, maintainable, and repeatable deployment process:
+---
 
-* Always use **Terraform workspaces** for environment isolation (Dev, Stage, Prod).
-* Avoid **hardcoding credentials** in configuration files; use **Azure Key Vault** for secure secret storage and dynamic retrieval.
-* Verify **NSG (Network Security Group) and UDR (User-Defined Route)** rules after deployment to ensure secure network flow matches the traffic matrix.
-* Always perform a careful review of the comprehensive **`terraform plan`** output before executing **`terraform apply`**.
+## 🛡️ Best Practices
 
-This robust setup ensures fully automated, repeatable deployments without prompting for the variables manually.
+### Security
+- ✅ Use GitHub Actions for **Stage** and **Prod** deployments (not local CLI)
+- ✅ Never commit secrets to Git (use GitHub Secrets or Azure Key Vault)
+- ✅ Rotate service principal credentials regularly
+- ✅ Use least-privilege IAM roles
+- ✅ Enable Azure Policy and security scanning
+
+### State Management
+- ✅ Always use remote backend (Azure Storage) for state
+- ✅ Enable state locking to prevent concurrent modifications
+- ✅ Enable blob versioning for state file recovery
+- ✅ Backup state files regularly
+
+### Deployment Hygiene
+- ✅ Always review `terraform plan` before applying
+- ✅ Use environment-specific `.tfvars` files
+- ✅ Tag all resources with environment, owner, and purpose
+- ✅ Document infrastructure changes in Git commit messages
+- ✅ Test changes in **Dev** before promoting to **Stage/Prod**
+
+### Monitoring & Observability
+- ✅ Enable Azure Monitor for AKS
+- ✅ Configure Application Insights
+- ✅ Set up log analytics workspace
+- ✅ Create alerts for critical metrics
+- ✅ Review deployment logs in GitHub Actions
+
+---
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+**Issue: MySQL InternalServerError during deployment**
+- **Cause:** Transient Azure API issue or resource conflict
+- **Solution:** Retry the workflow or check if MySQL server already exists in portal
+
+**Issue: Frontend LoadBalancer stuck in "pending"**
+- **Cause:** Azure LoadBalancer provisioning takes 2-3 minutes
+- **Solution:** Wait or check NSG rules for port 80/443
+
+**Issue: Terraform state lock**
+- **Cause:** Previous run didn't complete cleanly
+- **Solution:** `terraform force-unlock <lock-id>` (use cautiously)
+
+**Issue: Docker build fails in GitHub Actions**
+- **Cause:** Dockerfile not found or application repo inaccessible
+- **Solution:** Verify `app_repository` and `app_branch` inputs, check repo permissions
+
+**Issue: kubectl can't connect to AKS**
+- **Cause:** Credentials not fetched or expired
+- **Solution:** Run `az aks get-credentials` again
+
+### Support Resources
+- [Terraform Azure Provider Docs](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs)
+- [AKS Documentation](https://docs.microsoft.com/azure/aks/)
+- [GitHub Actions Documentation](https://docs.github.com/en/actions)
+- See also: [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md), [BACKEND_SETUP.md](BACKEND_SETUP.md)

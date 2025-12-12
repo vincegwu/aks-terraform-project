@@ -22,6 +22,10 @@ aks_max_count = 5
 mysql_admin_username = "adminuser"
 mysql_admin_password = "DevStrongPassword123!"
 
+# Security settings - DISABLED for dev environment (easier local access)
+create_private_endpoints   = false
+enable_private_aks_cluster = false
+
 # Optional: Override ACR SKU (default is "Standard"; use "Premium" for geo-replication)
 # acr_sku = "Standard"
 
