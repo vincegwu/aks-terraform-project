@@ -51,5 +51,11 @@ variable "kv_sku" {
 variable "create_private_endpoints" {
   type        = bool
   description = "Global flag to enable creation of optional private endpoints for modules that support them (ACR, Key Vault). Set to true to create private endpoints."
-  default     = false
+  default     = true
+}
+
+variable "enable_private_aks_cluster" {
+  type        = bool
+  description = "Enable private AKS cluster (API server accessible only via private network)"
+  default     = true
 }

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: book-review-config
+  labels:
+    app: book-review
+data:
+  # Backend API endpoint for frontend
+  backend_api_url: "http://book-review-backend:8080"
+  
+  # Database configuration (non-sensitive)
+  database_host: "<MYSQL_FQDN>"
+  database_port: "3306"
+  database_name: "bookreview"

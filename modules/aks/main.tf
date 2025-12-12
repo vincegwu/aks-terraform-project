@@ -1,8 +1,12 @@
+data "azurerm_client_config" "current" {}
+
 resource "azurerm_kubernetes_cluster" "aks" {
-  name                = "${var.project_name}-${var.environment}-aks"
-  location            = var.location
-  resource_group_name = var.resource_group_name
-  dns_prefix          = "${var.project_name}-${var.environment}-aks"
+  name                    = "${var.project_name}-${var.environment}-aks"
+  location                = var.location
+  resource_group_name     = var.resource_group_name
+  dns_prefix              = "${var.project_name}-${var.environment}-aks"
+  private_cluster_enabled = var.enable_private_cluster
+  local_account_disabled  = true
 
   default_node_pool {
     name                         = "default"
@@ -25,12 +29,16 @@ resource "azurerm_kubernetes_cluster" "aks" {
     outbound_type     = "loadBalancer"
   }
 
+  azure_active_directory_role_based_access_control {
+    tenant_id          = data.azurerm_client_config.current.tenant_id
+    azure_rbac_enabled = true
+  }
+
   azure_policy_enabled              = true
   role_based_access_control_enabled = true
 
   tags = {
     environment = var.environment
     project     = var.project_name
-    # project     = var.project_name
   }
 }

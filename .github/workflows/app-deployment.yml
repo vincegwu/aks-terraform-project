@@ -1,0 +1,333 @@
+name: Application Deployment
+
+# Workflow Chain: Infrastructure Deploy → Application Deploy (auto) → Manual Destroy
+# This workflow is automatically triggered by Infrastructure Deployment on success
+# Can also be manually triggered for redeployment or updates
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment Environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - stage
+          - prod
+      frontend_image_tag:
+        description: 'Frontend Image Tag'
+        required: false
+        default: 'latest'
+      backend_image_tag:
+        description: 'Backend Image Tag'
+        required: false
+        default: 'latest'
+      run_id:
+        description: 'Infrastructure workflow run ID (auto-filled)'
+        required: false
+        type: string
+      app_repository:
+        description: 'Application GitHub Repository (e.g., owner/repo)'
+        required: false
+        default: 'pravinmishraaws/book-review-app'
+        type: string
+      app_branch:
+        description: 'Application Repository Branch'
+        required: false
+        default: 'main'
+        type: string
+
+env:
+  FRONTEND_PATH: './book-review-app/frontend'
+  BACKEND_PATH: './book-review-app/backend'
+  K8S_PATH: './k8s'
+
+jobs:
+  build-and-push-images:
+    name: Build and Push Container Images
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    outputs:
+      acr-login-server: ${{ steps.get-infra.outputs.acr-login-server }}
+      aks-cluster-name: ${{ steps.get-infra.outputs.aks-cluster-name }}
+      resource-group: ${{ steps.get-infra.outputs.resource-group }}
+      mysql-fqdn: ${{ steps.get-infra.outputs.mysql-fqdn }}
+      frontend-image: ${{ steps.get-infra.outputs.acr-login-server }}/book-review-frontend:${{ github.event.inputs.frontend_image_tag }}
+      backend-image: ${{ steps.get-infra.outputs.acr-login-server }}/book-review-backend:${{ github.event.inputs.backend_image_tag }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Download Terraform State
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-state-${{ github.event.inputs.environment }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.inputs.run_id }}
+          repository: ${{ github.repository }}
+      
+      - name: Fetch Application Code from Repository
+        run: |
+          APP_REPO="${{ github.event.inputs.app_repository || 'pravinmishraaws/book-review-app' }}"
+          APP_BRANCH="${{ github.event.inputs.app_branch || 'main' }}"
+          
+          echo "📥 Fetching application code from repository..."
+          echo "Repository: $APP_REPO"
+          echo "Branch: $APP_BRANCH"
+          
+          # Clone the application repository
+          git clone --branch $APP_BRANCH --depth 1 \
+            https://github.com/$APP_REPO.git book-review-app
+          
+          echo "✅ Application code fetched successfully"
+          echo "📁 Directory structure:"
+          ls -la book-review-app/
+      
+      - name: Verify Application Structure
+        run: |
+          echo "🔍 Verifying application structure..."
+          
+          if [ -d "${{ env.BACKEND_PATH }}" ]; then
+            echo "✅ Backend directory found"
+            ls -la ${{ env.BACKEND_PATH }}/
+          else
+            echo "⚠️ Backend directory not found at ${{ env.BACKEND_PATH }}"
+          fi
+          
+          if [ -d "${{ env.FRONTEND_PATH }}" ]; then
+            echo "✅ Frontend directory found"
+            ls -la ${{ env.FRONTEND_PATH }}/
+          else
+            echo "⚠️ Frontend directory not found at ${{ env.FRONTEND_PATH }}"
+          fi
+      
+      - name: Extract Infrastructure Details from Terraform
+        id: get-infra
+        run: |
+          echo "📋 Extracting infrastructure details from Terraform outputs..."
+          
+          # Parse terraform outputs JSON
+          ACR_NAME=$(jq -r '.acr_name.value' terraform-outputs.json)
+          ACR_LOGIN_SERVER=$(jq -r '.acr_login_server.value' terraform-outputs.json)
+          AKS_CLUSTER_NAME=$(jq -r '.aks_cluster_name.value' terraform-outputs.json)
+          RESOURCE_GROUP=$(jq -r '.resource_group_name.value' terraform-outputs.json)
+          MYSQL_FQDN=$(jq -r '.mysql_fqdn.value' terraform-outputs.json)
+          
+          # Validate extracted values
+          if [ -z "$ACR_NAME" ] || [ "$ACR_NAME" == "null" ]; then
+            echo "❌ Error: ACR name not found in Terraform outputs"
+            exit 1
+          fi
+          
+          # Export to outputs
+          echo "acr-name=$ACR_NAME" >> $GITHUB_OUTPUT
+          echo "acr-login-server=$ACR_LOGIN_SERVER" >> $GITHUB_OUTPUT
+          echo "aks-cluster-name=$AKS_CLUSTER_NAME" >> $GITHUB_OUTPUT
+          echo "resource-group=$RESOURCE_GROUP" >> $GITHUB_OUTPUT
+          echo "mysql-fqdn=$MYSQL_FQDN" >> $GITHUB_OUTPUT
+          
+          echo "✅ Infrastructure Details:"
+          echo "  ACR: $ACR_NAME ($ACR_LOGIN_SERVER)"
+          echo "  AKS: $AKS_CLUSTER_NAME"
+          echo "  RG: $RESOURCE_GROUP"
+          echo "  MySQL: $MYSQL_FQDN"
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: ACR Login
+        run: |
+          az acr login --name ${{ steps.get-infra.outputs.acr-name }}
+      
+      - name: Build and Push Backend Image
+        run: |
+          # Check if backend directory exists
+          if [ ! -d "${{ env.BACKEND_PATH }}" ]; then
+            echo "⚠️ Backend directory not found at ${{ env.BACKEND_PATH }}"
+            echo "Creating a sample Dockerfile for demonstration..."
+            mkdir -p ${{ env.BACKEND_PATH }}
+            cat > ${{ env.BACKEND_PATH }}/Dockerfile <<EOF
+          FROM node:18-alpine
+          WORKDIR /app
+          COPY package*.json ./
+          RUN npm ci --only=production || true
+          COPY . .
+          EXPOSE 8080
+          CMD ["npm", "start"]
+          EOF
+          fi
+          
+          docker build -t ${{ steps.get-infra.outputs.acr-login-server }}/book-review-backend:${{ github.event.inputs.backend_image_tag }} \
+            ${{ env.BACKEND_PATH }}
+          
+          docker push ${{ steps.get-infra.outputs.acr-login-server }}/book-review-backend:${{ github.event.inputs.backend_image_tag }}
+          
+          echo "✅ Backend image pushed successfully"
+      
+      - name: Build and Push Frontend Image
+        run: |
+          # Check if frontend directory exists
+          if [ ! -d "${{ env.FRONTEND_PATH }}" ]; then
+            echo "⚠️ Frontend directory not found at ${{ env.FRONTEND_PATH }}"
+            echo "Creating a sample Dockerfile for demonstration..."
+            mkdir -p ${{ env.FRONTEND_PATH }}
+            cat > ${{ env.FRONTEND_PATH }}/Dockerfile <<EOF
+          FROM nginx:alpine
+          COPY . /usr/share/nginx/html
+          EXPOSE 80
+          CMD ["nginx", "-g", "daemon off;"]
+          EOF
+          fi
+          
+          docker build -t ${{ steps.get-infra.outputs.acr-login-server }}/book-review-frontend:${{ github.event.inputs.frontend_image_tag }} \
+            ${{ env.FRONTEND_PATH }}
+          
+          docker push ${{ steps.get-infra.outputs.acr-login-server }}/book-review-frontend:${{ github.event.inputs.frontend_image_tag }}
+          
+          echo "✅ Frontend image pushed successfully"
+      
+      - name: Verify Images in ACR
+        run: |
+          echo "📦 Verifying images in ACR..."
+          az acr repository show-tags --name ${{ steps.get-infra.outputs.acr-name }} --repository book-review-backend
+          az acr repository show-tags --name ${{ steps.get-infra.outputs.acr-name }} --repository book-review-frontend
+
+  deploy-to-aks:
+    name: Deploy to AKS
+    runs-on: ubuntu-latest
+    needs: build-and-push-images
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Get AKS Credentials
+        run: |
+          echo "✅ Using infrastructure details from Terraform:"
+          echo "  AKS: ${{ needs.build-and-push-images.outputs.aks-cluster-name }}"
+          echo "  Resource Group: ${{ needs.build-and-push-images.outputs.resource-group }}"
+          
+          # Get AKS credentials using Terraform outputs
+          az aks get-credentials \
+            --resource-group ${{ needs.build-and-push-images.outputs.resource-group }} \
+            --name ${{ needs.build-and-push-images.outputs.aks-cluster-name }} \
+            --overwrite-existing
+      
+      - name: Set MySQL FQDN
+        id: get-mysql
+        run: |
+          MYSQL_FQDN="${{ needs.build-and-push-images.outputs.mysql-fqdn }}"
+          echo "mysql-fqdn=$MYSQL_FQDN" >> $GITHUB_OUTPUT
+          echo "✅ MySQL FQDN from Terraform: $MYSQL_FQDN"
+      
+      - name: Update Kubernetes Manifests
+        run: |
+          # Extract ACR name from login server
+          ACR_NAME=$(echo "${{ needs.build-and-push-images.outputs.acr-login-server }}" | cut -d'.' -f1)
+          MYSQL_FQDN="${{ steps.get-mysql.outputs.mysql-fqdn }}"
+          
+          # Update backend deployment
+          sed -i "s|<ACR_NAME>\.azurecr\.io/book-review-backend:latest|${{ needs.build-and-push-images.outputs.backend-image }}|g" \
+            ${{ env.K8S_PATH }}/deployments/backend-deployment.yaml
+          
+          # Update frontend deployment
+          sed -i "s|<ACR_NAME>\.azurecr\.io/book-review-frontend:latest|${{ needs.build-and-push-images.outputs.frontend-image }}|g" \
+            ${{ env.K8S_PATH }}/deployments/frontend-deployment.yaml
+          
+          # Update ConfigMap
+          sed -i "s|<MYSQL_FQDN>|$MYSQL_FQDN|g" \
+            ${{ env.K8S_PATH }}/configmaps/app-config.yaml
+          
+          echo "✅ Kubernetes manifests updated"
+      
+      - name: Create Kubernetes Namespace
+        run: |
+          kubectl create namespace book-review-${{ github.event.inputs.environment }} --dry-run=client -o yaml | kubectl apply -f -
+          kubectl config set-context --current --namespace=book-review-${{ github.event.inputs.environment }}
+      
+      - name: Create Kubernetes Secrets
+        run: |
+          # Create or update database credentials secret
+          kubectl create secret generic book-review-secrets \
+            --from-literal=database_user=${{ secrets.MYSQL_ADMIN_USERNAME }} \
+            --from-literal=database_password=${{ secrets.MYSQL_ADMIN_PASSWORD }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+          
+          echo "✅ Secrets created/updated"
+      
+      - name: Deploy ConfigMap
+        run: |
+          kubectl apply -f ${{ env.K8S_PATH }}/configmaps/app-config.yaml
+          echo "✅ ConfigMap deployed"
+      
+      - name: Deploy Backend
+        run: |
+          kubectl apply -f ${{ env.K8S_PATH }}/deployments/backend-deployment.yaml
+          kubectl apply -f ${{ env.K8S_PATH }}/services/backend-service.yaml
+          
+          echo "⏳ Waiting for backend pods to be ready..."
+          kubectl wait --for=condition=ready pod -l component=backend --timeout=300s || true
+          
+          echo "✅ Backend deployed"
+      
+      - name: Deploy Frontend
+        run: |
+          kubectl apply -f ${{ env.K8S_PATH }}/deployments/frontend-deployment.yaml
+          kubectl apply -f ${{ env.K8S_PATH }}/services/frontend-service.yaml
+          
+          echo "⏳ Waiting for frontend pods to be ready..."
+          kubectl wait --for=condition=ready pod -l component=frontend --timeout=300s || true
+          
+          echo "✅ Frontend deployed"
+      
+      - name: Get Application URL
+        run: |
+          echo "⏳ Waiting for LoadBalancer IP assignment (this may take 2-3 minutes)..."
+          
+          # Wait for external IP
+          for i in {1..30}; do
+            EXTERNAL_IP=$(kubectl get svc book-review-frontend -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+            if [ -n "$EXTERNAL_IP" ]; then
+              echo "✅ Application deployed successfully!"
+              echo "🌐 Frontend URL: http://$EXTERNAL_IP"
+              echo "📝 Backend URL (internal): http://book-review-backend:8080"
+              break
+            fi
+            echo "Attempt $i/30: Still waiting for external IP..."
+            sleep 10
+          done
+          
+          if [ -z "$EXTERNAL_IP" ]; then
+            echo "⚠️ External IP not yet assigned. Check status with: kubectl get svc book-review-frontend"
+          fi
+      
+      - name: Deployment Summary
+        run: |
+          echo "📊 Deployment Summary"
+          echo "===================="
+          echo ""
+          echo "Environment: ${{ github.event.inputs.environment }}"
+          echo "Namespace: book-review-${{ github.event.inputs.environment }}"
+          echo ""
+          echo "📦 Deployed Images:"
+          echo "  Backend:  ${{ needs.build-and-push-images.outputs.backend-image }}"
+          echo "  Frontend: ${{ needs.build-and-push-images.outputs.frontend-image }}"
+          echo ""
+          echo "🎯 Resources:"
+          kubectl get all -l app=book-review
+          echo ""
+          echo "🔍 Pod Status:"
+          kubectl get pods -l app=book-review -o wide
+          echo ""
+          echo "🌐 Services:"
+          kubectl get svc -l app=book-review

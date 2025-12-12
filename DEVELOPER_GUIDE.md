@@ -1,202 +1,922 @@
 # 💻 Azure Kubernetes Service (AKS) Terraform Project – Developer Guide
 
-This guide outlines the essential steps for setting up the your local environment and understanding the core tools required to work with the **Dev** AKS cluster and its resources.
+This comprehensive guide covers development workflows, CI/CD pipelines, local development setup, and best practices for working with the AKS infrastructure and applications.
 
 ---
 
-### 1. Environment Setup
+## 🎯 Overview
 
-To ensure successful deployment and interaction with the Azure resources, confirm all prerequisites are met:
+The project uses a **two-stage automated CI/CD pipeline** with GitHub Actions:
 
-#### Prerequisites
+1. **Infrastructure Deployment** - Deploys Azure resources using Terraform
+2. **Application Deployment** - Builds Docker images and deploys to AKS
 
-* **Azure subscription** and necessary permissions to deploy resources.
-* **Installed Tools:**
-    * **Terraform ($\geq 1.6$):** [https://www.terraform.io/downloads](https://www.terraform.io/downloads)
-    * **Azure CLI:** [https://docs.microsoft.com/en-us/cli/azure/install-azure-cli](https://docs.microsoft.com/en-us/cli/azure/install-azure-cli)
-    * **kubectl:** [https://kubernetes.io/docs/tasks/tools/](https://kubernetes.io/docs/tasks/tools/)
-* Access to the project repository (`aks-terraform-project/`).
-* **Authentication:** Ensure you are logged into Azure CLI (`az login`).
+Developers can work using:
+- **GitHub Actions** (recommended for all environments)
+- **Local development** (for Dev environment only)
 
 ---
 
-### 2. Terraform Workspaces
+## 🚀 Quick Start for Developers
 
-The project uses Terraform Workspaces to enforce strict isolation between environments. You must select the appropriate workspace before running any deployment commands (`plan`, `apply`, `destroy`).
+### For Application Development
 
-| Workspace | Environment | Purpose |
-| :--- | :--- | :--- |
-| `dev` | Development | Primary environment for developers to test features and configuration. |
-| `stage` | Staging | Environment for integration testing and pre-production validation. |
-| `prod` | Production | Live production environment (highly restricted access). |
+1. Fork/clone the application repository: `pravinmishraaws/book-review-app`
+2. Make changes to backend/frontend code
+3. Test locally using Docker Compose
+4. Push changes to trigger CI/CD pipeline
+5. Monitor deployment in GitHub Actions
 
-* **State Isolation:** Workspaces ensure that the Terraform state is completely separate for each environment, preventing accidental cross-environment changes.
-* **Automated Variables:** Use the **workspace-aware wrapper script** (`terraform.sh` or `terraform.ps1`) to automatically load environment-specific variables from the correct `.tfvars` file, avoiding manual input.
+### For Infrastructure Changes
 
-#### Selecting a Workspace
+1. Clone this repository: `aks-terraform-project`
+2. Create feature branch
+3. Modify Terraform modules in `modules/` or environment configs in `envs/`
+4. Create Pull Request (triggers validation workflow)
+5. Merge to `main` (auto-deploys to Dev)
+6. Manually promote to Stage/Prod via GitHub Actions
 
-```bash
-# Select the 'dev' workspace. If it doesn't exist, create it.
-terraform workspace select dev || terraform workspace new dev
+---
+
+## 📋 Prerequisites
+
+### Required Tools
+
+| Tool | Version | Purpose | Installation |
+|------|---------|---------|--------------|
+| **Azure CLI** | Latest | Azure resource management | [Install Guide](https://docs.microsoft.com/cli/azure/install-azure-cli) |
+| **kubectl** | ≥1.28 | Kubernetes cluster management | [Install Guide](https://kubernetes.io/docs/tasks/tools/) |
+| **Terraform** | ≥1.7.5 | Infrastructure as Code | [Install Guide](https://www.terraform.io/downloads) |
+| **Docker** | Latest | Container building and testing | [Install Guide](https://docs.docker.com/get-docker/) |
+| **Git** | Latest | Version control | [Install Guide](https://git-scm.com/downloads) |
+
+### Optional Tools
+
+| Tool | Purpose |
+|------|---------|
+| **Helm** | Kubernetes package management |
+| **k9s** | Terminal UI for Kubernetes |
+| **Azure CLI Extensions** | `aks-preview`, `application-insights` |
+
+### Azure Permissions
+
+**For Local Development (Dev only):**
+- `Contributor` role on resource group
+- `AcrPush` role on ACR
+- `Azure Kubernetes Service Cluster User Role` on AKS
+
+**For GitHub Actions (all environments):**
+- Service Principal with `Contributor` at subscription level
+- See [DEPLOYMENT.md](DEPLOYMENT.md) for secret configuration
+
+---
+
+## 🔄 GitHub Actions CI/CD Pipeline
+
+### Pipeline Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     INFRASTRUCTURE PIPELINE                      │
+│                (aks-terraform-pipeline.yml)                      │
+├─────────────────────────────────────────────────────────────────┤
+│ Trigger: Push to main / PR / Manual                             │
+│                                                                  │
+│ ┌─────────────┐    ┌──────────────┐    ┌──────────────┐       │
+│ │  Validate   │ -> │     Plan     │ -> │    Apply     │       │
+│ │  Format     │    │   Generate   │    │   Deploy     │       │
+│ │  Check      │    │   tfplan     │    │ Infrastructure│       │
+│ └─────────────┘    └──────────────┘    └──────┬───────┘       │
+└────────────────────────────────────────────────┼───────────────┘
+                                                  │ Auto-trigger
+                                                  ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    APPLICATION PIPELINE                          │
+│                   (app-deployment.yml)                           │
+├─────────────────────────────────────────────────────────────────┤
+│ Trigger: Auto (on infra success) / Manual                       │
+│                                                                  │
+│ ┌──────────────────┐           ┌─────────────────┐             │
+│ │ Build & Push     │           │  Deploy to AKS  │             │
+│ │ - Clone app repo │  ──────>  │  - Get AKS creds│             │
+│ │ - Build images   │           │  - Update K8s   │             │
+│ │ - Push to ACR    │           │  - Apply configs│             │
+│ └──────────────────┘           │  - Expose app   │             │
+│                                 └─────────────────┘             │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### 3. Deploying Infrastructure (Dev)
+### Infrastructure Pipeline Details
 
-This section details the commands for initializing and deploying the **Dev** environment infrastructure.
+**File:** `.github/workflows/aks-terraform-pipeline.yml`
 
-1.  **Select Dev Workspace:** Ensure you are operating within the dedicated Development workspace.
+**Jobs:**
 
-    ```bash
-    terraform workspace select dev || terraform workspace new dev
-    ```
+1. **terraform-validate** (Matrix: dev, stage, prod)
+   - Checkout code
+   - Setup Terraform 1.7.5
+   - Format check: `terraform fmt -check -recursive`
+   - Validate: `terraform validate`
 
-2.  **Run Terraform Plan:** Review the plan output to see what resources will be created.
+2. **terraform-plan**
+   - Setup Terraform and Azure authentication
+   - Determine environment (auto=dev, manual=selected)
+   - Initialize with remote backend (Azure Storage)
+   - Generate plan: `terraform plan -var-file=envs/<env>/terraform.tfvars`
+   - Upload plan artifact
 
-    ```bash
-    ./scripts/terraform.sh plan
-    ```
+3. **terraform-apply**
+   - Download plan artifact
+   - Apply plan: `terraform apply tfplan`
+   - Export outputs to JSON (ACR, AKS, MySQL details)
+   - Upload state artifact
+   - **Trigger application deployment** automatically
 
-3.  **Apply Deployment:** Execute the deployment.
+**Triggers:**
+- **Push to `main`**: Auto-deploys Dev
+- **Pull Request**: Validation only (no apply)
+- **Manual (`workflow_dispatch`)**: Choose environment
 
-    ```bash
-    ./scripts/terraform.sh apply -auto-approve
-    ```
+### Application Pipeline Details
 
-> ⚙️ **The wrapper script automatically picks the correct variable file (`envs/dev/terraform.tfvars`), so no variable prompts are required.**
+**File:** `.github/workflows/app-deployment.yml`
 
----
-
-### 4. Accessing AKS Cluster
-
-Once the infrastructure is deployed, use the following steps to establish connectivity to the cluster API.
-
-1.  **Fetch Kubeconfig:** Run the utility script to securely retrieve the cluster configuration required for `kubectl`.
-
-    ```bash
-    bash scripts/get-kubeconfig.sh cloudproj-dev-rg cloudproj-dev-aks
-    ```
-
-2.  **Verify Cluster Connectivity:** Use `kubectl` to confirm that the nodes are ready and system pods are running.
-
-    ```bash
-    kubectl get nodes
-    kubectl get pods -A
-    ```
-
-3.  **Deployment:** Developers can now deploy applications to the **Dev AKS cluster** using standard `kubectl` commands or integrated CI/CD pipelines.
-
----
-
-### 5. Accessing ACR
-
-To manage container images, developers need to authenticate with the Azure Container Registry (ACR) and use standard Docker commands.
-
-1.  **Login to ACR:** Use the Azure CLI to authenticate your Docker client using the registry name.
-
-    ```bash
-    az acr login --name <acr_name>
-    ```
-
-2.  **Pull Images:** Once logged in, you can pull images for local testing or reference.
-
-    ```bash
-    # Pull the frontend image
-    docker pull <mysql_fqdn>/frontend:dev
-
-    ```
-
-> 🔒 **Push permissions (for deploying new images) are strictly controlled via Azure AD Role-Based Access Control (RBAC).**
-
-### 6. Database Access (Dev) 🔒
-
-Access to the Azure MySQL Flexible Server is highly restricted, leveraging a secure, private network configuration.
-
-* **Network Security:** The MySQL server resides in a **private subnet** and is accessed via a **private endpoint (PE)**. This architecture ensures that traffic never leaves the Azure backbone.
-* **Access Control:** Developers can only connect from **whitelisted IPs**. In the Dev environment, this often means your workstation's IP or a designated jump host IP must be explicitly allowed in the NSG rules for the `database subnet`.
-* **Security:** Database credentials (`username`, `password`) are stored securely in **Azure Key Vault** and should be read dynamically for connection (e.g., using a small script or retrieving them manually for client setup).
-
-#### Test MySQL Connection:
-
-```bash
-# Connect using the FQDN retrieved from deployment outputs
-kubectl run mysql-test --rm -it --image=mysql:8.0 --restart=Never -- bash 
-    
-    # Run the following command inside the MySQL prompt
-    mysql -h <mysql_fqdn> -u adminuser -p
-
-    # Once prompted, supply the password: DevStrongPassword123!
-
-    # Once inside the database, RUN:
-     SHOW DATABASES;
+**Configuration:**
+```yaml
+env:
+  FRONTEND_PATH: './book-review-app/frontend'
+  BACKEND_PATH: './book-review-app/backend'
+  K8S_PATH: './k8s'
 ```
 
-### 7. Stage / Production Workflow 🚀
+**Jobs:**
 
-The **Stage** and **Production** environments are exclusively managed by automation to enforce security and consistency.
+1. **build-and-push-images**
+   - Download Terraform outputs from infrastructure run
+   - Clone application repo: `pravinmishraaws/book-review-app`
+   - Extract ACR details from Terraform outputs
+   - Login to Azure and ACR
+   - Build Docker images:
+     - Backend: `docker build -t <acr>/book-review-backend:<tag> ./backend`
+     - Frontend: `docker build -t <acr>/book-review-frontend:<tag> ./frontend`
+   - Push images to ACR
+   - Verify images in registry
 
-* **Access Restriction:** **Stage** and **Prod** deployments are handled via **CI/CD pipelines**. Developers **do not get direct `kubectl` access** to these clusters. Access is restricted to service principals used by the pipeline.
-* **Deployment Method:** Deployment remains consistent using **Terraform workspaces**.
+2. **deploy-to-aks**
+   - Get AKS credentials using Terraform outputs
+   - Update K8s manifests with:
+     - ACR image paths
+     - MySQL FQDN from Terraform
+   - Create Kubernetes namespace: `book-review-<env>`
+   - Create secrets (MySQL credentials)
+   - Deploy ConfigMaps
+   - Deploy backend (deployment + service)
+   - Deploy frontend (deployment + LoadBalancer service)
+   - Wait for pods to be ready
+   - Get and display application URL
 
-#### Deploy Stage
+**Triggers:**
+- **Automatically** by infrastructure pipeline on success
+- **Manual (`workflow_dispatch`)** with options:
+  - Environment selection
+  - Custom image tags
+  - Custom app repository/branch
+
+### Running Workflows Manually
+
+#### Deploy Infrastructure
+
+1. Navigate to **Actions** > **Infrastructure Deployment**
+2. Click **Run workflow**
+3. Select branch: `main`
+4. Choose environment: `dev`, `stage`, or `prod`
+5. Click **Run workflow**
+
+**What Happens:**
+- Validates Terraform code
+- Generates and applies plan
+- Deploys all Azure resources
+- Auto-triggers application deployment
+
+#### Deploy Application Only
+
+1. Navigate to **Actions** > **Application Deployment**
+2. Click **Run workflow**
+3. Configure:
+   - **Environment**: `dev`, `stage`, or `prod`
+   - **Frontend tag**: `latest`, `v1.2.3`, or custom
+   - **Backend tag**: `latest`, `v1.2.3`, or custom
+   - **Run ID**: Leave blank (uses latest infra)
+   - **App Repository**: Default or custom fork
+   - **App Branch**: Default `main` or feature branch
+4. Click **Run workflow**
+
+**Use Cases:**
+- Redeploy application with new image tags
+- Deploy from feature branch for testing
+- Rollback to previous version
+- Deploy custom fork of application
+
+---
+
+## 💻 Local Development Workflow
+
+### 1. Initial Setup
 
 ```bash
-terraform workspace select stage || terraform workspace new stage
+# Clone infrastructure repo
+git clone https://github.com/<your-org>/aks-terraform-project.git
+cd aks-terraform-project
+
+# Clone application repo (optional, for local development)
+git clone https://github.com/pravinmishraaws/book-review-app.git
+
+# Login to Azure
+az login
+az account set --subscription <subscription-id>
+
+# Configure kubectl (if AKS already deployed)
+az aks get-credentials \
+  --resource-group cloudproj-dev-rg \
+  --name cloudproj-dev-aks
+```
+
+### 2. Environment Configuration
+
+#### Remote State Backend
+
+The project uses **Azure Storage** for remote state with locking:
+
+```bash
+# Initialize with backend
+terraform init \
+  -backend-config="resource_group_name=terraform-state-rg" \
+  -backend-config="storage_account_name=tfstate1234" \
+  -backend-config="container_name=tfstate" \
+  -backend-config="key=dev/terraform.tfstate"
+```
+
+**State Files by Environment:**
+- Dev: `dev/terraform.tfstate`
+- Stage: `stage/terraform.tfstate`
+- Prod: `prod/terraform.tfstate`
+
+See [BACKEND_SETUP.md](BACKEND_SETUP.md) for detailed backend configuration.
+
+#### Environment Variables
+
+Set these for Terraform Azure provider:
+
+```bash
+# Option 1: Use Azure CLI authentication (recommended for local)
+az login
+
+# Option 2: Use service principal (for automation)
+export ARM_CLIENT_ID="<client-id>"
+export ARM_CLIENT_SECRET="<client-secret>"
+export ARM_SUBSCRIPTION_ID="<subscription-id>"
+export ARM_TENANT_ID="<tenant-id>"
+
+# Option 3: Set backend access key
+export ARM_ACCESS_KEY="<storage-account-key>"
+```
+
+### 3. Working with Terraform (Local Dev Only)
+
+⚠️ **Important:** Local Terraform operations should only be used for **Dev environment**. Use GitHub Actions for Stage and Prod.
+
+#### Deploying Infrastructure
+
+```bash
+# Initialize backend
+terraform init -backend-config="key=dev/terraform.tfstate"
+
+# Format code
+terraform fmt -recursive
+
+# Validate configuration
+terraform validate
+
+# Plan changes
+terraform plan -var-file="envs/dev/terraform.tfvars" -out=tfplan
+
+# Review plan carefully, then apply
+terraform apply tfplan
+
+# Or use wrapper script (auto-loads correct tfvars)
 ./scripts/terraform.sh plan
 ./scripts/terraform.sh apply -auto-approve
 ```
 
-#### Deploy Production
+#### Making Infrastructure Changes
+
+1. **Create feature branch:**
+   ```bash
+   git checkout -b feature/add-application-gateway
+   ```
+
+2. **Make changes** in `modules/` or root `.tf` files
+
+3. **Test changes:**
+   ```bash
+   terraform fmt -recursive
+   terraform validate
+   terraform plan -var-file="envs/dev/terraform.tfvars"
+   ```
+
+4. **Create Pull Request:**
+   - Push branch to GitHub
+   - Create PR to `main`
+   - GitHub Actions validates code automatically
+   - Review validation results
+
+5. **Merge and Deploy:**
+   - Merge PR to `main`
+   - Auto-deploys to Dev
+   - Manually deploy to Stage/Prod via Actions
+
+---
+
+## 🎮 Working with Kubernetes (AKS)
+
+### Connecting to AKS Cluster
+
+#### Option 1: Using Utility Script
 
 ```bash
-terraform workspace select prod || terraform workspace new prod
-./scripts/terraform.sh plan
-./scripts/terraform.sh apply -auto-approve
+./scripts/get-kubeconfig.sh cloudproj-dev-rg cloudproj-dev-aks
 ```
 
-⚙️ The wrapper scripts automatically use the correct variable files (envs/stage/terraform.tfvars or envs/prod/terraform.tfvars), ensuring consistency and safety across production environments.
+#### Option 2: Direct Azure CLI
 
+```bash
+az aks get-credentials \
+  --resource-group cloudproj-dev-rg \
+  --name cloudproj-dev-aks \
+  --overwrite-existing
 
-### 8. Switching Between Workspaces 🔄
+# Verify connection
+kubectl cluster-info
+kubectl get nodes
+```
 
-To ensure all Terraform commands target the correct environment, you must explicitly switch your active workspace.
+### Useful kubectl Commands
 
-* **List Workspaces:**
-    ```bash
-    terraform workspace list
-    ```
+#### Viewing Resources
 
-* **Select Target Workspace:**
-    ```bash
-    terraform workspace select <workspace_name>
-    ```
+```bash
+# Get all resources in namespace
+kubectl get all -n book-review-dev
 
-> ⚙️ This command is crucial. It ensures all subsequent Terraform commands automatically use the correct environment state and variables for the selected environment (`dev`, `stage`, or `prod`).
+# Get pods with detailed info
+kubectl get pods -n book-review-dev -o wide
+
+# Describe pod (for troubleshooting)
+kubectl describe pod <pod-name> -n book-review-dev
+
+# View pod logs
+kubectl logs -f <pod-name> -n book-review-dev
+
+# View logs for all pods with label
+kubectl logs -l app=book-review -n book-review-dev --tail=100 -f
+
+# Get services and external IPs
+kubectl get svc -n book-review-dev
+```
+
+#### Debugging
+
+```bash
+# Execute command in pod
+kubectl exec -it <pod-name> -n book-review-dev -- /bin/sh
+
+# Port forward service to local machine
+kubectl port-forward svc/book-review-backend 8080:8080 -n book-review-dev
+
+# Get events (shows recent activities/errors)
+kubectl get events -n book-review-dev --sort-by='.lastTimestamp'
+
+# Check pod resource usage
+kubectl top pods -n book-review-dev
+kubectl top nodes
+```
+
+#### Managing Deployments
+
+```bash
+# Scale deployment
+kubectl scale deployment book-review-backend --replicas=3 -n book-review-dev
+
+# Update image
+kubectl set image deployment/book-review-backend \
+  backend=<acr>.azurecr.io/book-review-backend:v1.2.3 \
+  -n book-review-dev
+
+# Rollback deployment
+kubectl rollout undo deployment/book-review-backend -n book-review-dev
+
+# Check rollout status
+kubectl rollout status deployment/book-review-backend -n book-review-dev
+
+# View rollout history
+kubectl rollout history deployment/book-review-backend -n book-review-dev
+```
 
 ---
 
-### 9. Best Practices for Developers 🛡️
+## 🐳 Working with Azure Container Registry (ACR)
 
-Adhere to these best practices for safe, secure, and efficient operations:
+### Authenticating to ACR
 
-1.  **Never hardcode credentials;** always use **Azure Key Vault** for secret storage.
-2.  Always verify **`terraform plan`** before running **`terraform apply`** to confirm expected changes.
-3.  Use the wrapper scripts (`terraform.sh`/`.ps1`) to ensure the **correct `.tfvars` file** is automatically applied.
-4.  Avoid modifying **Stage/Prod clusters directly**; all changes should flow through **CI/CD pipelines**.
-5.  Follow **naming and tagging conventions** strictly to maintain resource organization and cost management.
+```bash
+# Get ACR name from Terraform output
+ACR_NAME=$(terraform output -raw acr_name)
+
+# Login to ACR
+az acr login --name $ACR_NAME
+
+# Verify login
+docker info | grep Username
+```
+
+### Building and Pushing Images Locally
+
+```bash
+# Clone application repo
+cd book-review-app
+
+# Build backend image
+docker build -t $ACR_NAME.azurecr.io/book-review-backend:local ./backend
+
+# Build frontend image
+docker build -t $ACR_NAME.azurecr.io/book-review-frontend:local ./frontend
+
+# Push images
+docker push $ACR_NAME.azurecr.io/book-review-backend:local
+docker push $ACR_NAME.azurecr.io/book-review-frontend:local
+```
+
+### Managing Images
+
+```bash
+# List repositories
+az acr repository list --name $ACR_NAME --output table
+
+# List tags for repository
+az acr repository show-tags \
+  --name $ACR_NAME \
+  --repository book-review-backend \
+  --output table
+
+# Delete specific tag
+az acr repository delete \
+  --name $ACR_NAME \
+  --image book-review-backend:old-tag \
+  --yes
+
+# Pull image for local testing
+docker pull $ACR_NAME.azurecr.io/book-review-backend:latest
+docker run -p 8080:8080 $ACR_NAME.azurecr.io/book-review-backend:latest
+```
+
+### ACR Security
+
+- **RBAC Roles:**
+  - `AcrPull` - Read-only access (pull images)
+  - `AcrPush` - Push and pull images
+  - `AcrDelete` - Delete images
+  - `Owner` - Full access
+
+```bash
+# Grant ACR push access to user
+az role assignment create \
+  --assignee <user-email> \
+  --role AcrPush \
+  --scope /subscriptions/<sub-id>/resourceGroups/<rg>/providers/Microsoft.ContainerRegistry/registries/<acr-name>
+```
 
 ---
 
-### 10. Troubleshooting Tips 💡
+## 🗄️ Working with MySQL Database
 
-| Issue | Potential Cause / Action |
-| :--- | :--- |
-| **Terraform prompts for variables** | Make sure you are using the wrapper script (`terraform.sh`/`.ps1`) or explicitly supplying the correct `tfvars` file via the `-var-file` flag. |
-| **Kubeconfig not updating** | Run **`scripts/get-kubeconfig.sh`** after deployment to fetch the latest cluster credentials. |
-| **ACR login fails (`az acr login`)** | Ensure your user account or service principal has the proper **Azure AD RBAC permissions** (e.g., `AcrPull`, `AcrPush`) for the registry. |
+### Database Access (Dev Environment)
 
-This guide ensures developers can safely and efficiently work with all environments without manual input prompts, leveraging workspace-aware automation.
+**Network Configuration:**
+- MySQL resides in **private subnet** with **private endpoint**
+- No public access - accessible only from within VNet
+- Traffic stays on Azure backbone
+
+**Security:**
+- Credentials stored in **Azure Key Vault** and **GitHub Secrets**
+- Access restricted by NSG rules
+- SSL/TLS enforced for connections
+
+#### Accessing MySQL from AKS Pod
+
+```bash
+# Get MySQL FQDN from Terraform outputs
+MYSQL_FQDN=$(terraform output -raw mysql_fqdn)
+
+# Run temporary MySQL client pod
+kubectl run mysql-client --rm -it \
+  --image=mysql:8.0 \
+  --restart=Never \
+  -n book-review-dev \
+  -- bash
+
+# Inside the pod
+mysql -h $MYSQL_FQDN -u adminuser -p
+# Enter password when prompted
+
+# Once connected
+SHOW DATABASES;
+USE book_review_db;
+SHOW TABLES;
+SELECT * FROM users LIMIT 10;
+EXIT;
+```
+
+#### Accessing MySQL from Local Machine
+
+⚠️ **Not recommended for Dev** - Use kubectl port-forward for testing:
+
+```bash
+# Port forward through a pod
+kubectl run mysql-proxy --image=alpine/socat \
+  -n book-review-dev \
+  -- tcp-listen:3306,fork,reuseaddr tcp-connect:$MYSQL_FQDN:3306
+
+kubectl port-forward mysql-proxy 3306:3306 -n book-review-dev
+
+# In another terminal
+mysql -h 127.0.0.1 -P 3306 -u adminuser -p
+```
+
+#### Managing Database
+
+```bash
+# Create database
+CREATE DATABASE book_review_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+# Grant permissions
+GRANT ALL PRIVILEGES ON book_review_db.* TO 'adminuser'@'%';
+FLUSH PRIVILEGES;
+
+# Backup database
+kubectl exec -it <backend-pod> -n book-review-dev -- \
+  mysqldump -h $MYSQL_FQDN -u adminuser -p book_review_db > backup.sql
+
+# Restore database
+kubectl exec -i <backend-pod> -n book-review-dev -- \
+  mysql -h $MYSQL_FQDN -u adminuser -p book_review_db < backup.sql
+```
 
 ---
+
+## 🚀 Application Development Workflow
+
+### Local Development
+
+1. **Clone application repository:**
+   ```bash
+   git clone https://github.com/pravinmishraaws/book-review-app.git
+   cd book-review-app
+   ```
+
+2. **Develop locally with Docker Compose:**
+   ```bash
+   # Start services
+   docker-compose up -d
+   
+   # View logs
+   docker-compose logs -f
+   
+   # Stop services
+   docker-compose down
+   ```
+
+3. **Make changes** to backend/frontend code
+
+4. **Test changes locally**
+
+5. **Commit and push:**
+   ```bash
+   git add .
+   git commit -m "feat: add user authentication"
+   git push origin main
+   ```
+
+### Deploying Changes to Dev
+
+**Option 1: Via GitHub Actions (Recommended)**
+- Push to `main` branch
+- Infrastructure pipeline validates (if needed)
+- Application pipeline auto-deploys
+
+**Option 2: Manual Build and Deploy**
+```bash
+# Get ACR details
+ACR_NAME=$(cd ../aks-terraform-project && terraform output -raw acr_name)
+
+# Build and push
+az acr login --name $ACR_NAME
+docker build -t $ACR_NAME.azurecr.io/book-review-backend:dev-$(git rev-parse --short HEAD) ./backend
+docker push $ACR_NAME.azurecr.io/book-review-backend:dev-$(git rev-parse --short HEAD)
+
+# Update deployment
+kubectl set image deployment/book-review-backend \
+  backend=$ACR_NAME.azurecr.io/book-review-backend:dev-$(git rev-parse --short HEAD) \
+  -n book-review-dev
+
+# Watch rollout
+kubectl rollout status deployment/book-review-backend -n book-review-dev
+```
+
+---
+
+## 🔐 Security Best Practices
+
+### Credentials Management
+
+✅ **DO:**
+- Store secrets in Azure Key Vault
+- Use GitHub Secrets for CI/CD credentials
+- Rotate service principal credentials quarterly
+- Use managed identities where possible
+- Use least-privilege RBAC roles
+
+❌ **DON'T:**
+- Commit secrets to Git (use `.gitignore`)
+- Hardcode passwords in code
+- Share credentials via email/chat
+- Use same credentials across environments
+
+### Network Security
+
+- All resources deployed in private subnets
+- NAT Gateway for controlled egress
+- NSG rules restrict traffic
+- MySQL uses private endpoint only
+- AKS uses authorized IP ranges (if configured)
+
+### Access Control
+
+| Environment | Deployment Method | Access Level |
+|-------------|-------------------|--------------|
+| **Dev** | GitHub Actions or Local | Full access for developers |
+| **Stage** | GitHub Actions only | Read-only for developers |
+| **Prod** | GitHub Actions only | No developer access |
+
+---
+
+## 📊 Monitoring and Logging
+
+### View Application Logs
+
+```bash
+# Application logs
+kubectl logs -f deployment/book-review-backend -n book-review-dev
+kubectl logs -f deployment/book-review-frontend -n book-review-dev
+
+# System logs
+kubectl logs -n kube-system -l component=kube-apiserver
+
+# Events
+kubectl get events -n book-review-dev --sort-by='.lastTimestamp' | head -20
+```
+
+### Azure Monitor (if enabled)
+
+```bash
+# View AKS insights in Azure Portal
+az aks show \
+  --resource-group cloudproj-dev-rg \
+  --name cloudproj-dev-aks \
+  --query "addonProfiles.omsAgent"
+```
+
+---
+
+## 🛠️ Troubleshooting Guide
+
+### Common Issues
+
+#### Pod CrashLoopBackOff
+
+```bash
+# Check pod status
+kubectl describe pod <pod-name> -n book-review-dev
+
+# View logs
+kubectl logs <pod-name> -n book-review-dev --previous
+
+# Common causes:
+# - Wrong image tag
+# - Missing environment variables
+# - Database connection failure
+# - Application error on startup
+```
+
+#### ImagePullBackOff
+
+```bash
+# Check if image exists in ACR
+az acr repository show-tags --name $ACR_NAME --repository book-review-backend
+
+# Verify ACR access
+az acr login --name $ACR_NAME
+
+# Check AKS has ACR pull permission
+az aks check-acr \
+  --resource-group cloudproj-dev-rg \
+  --name cloudproj-dev-aks \
+  --acr $ACR_NAME.azurecr.io
+```
+
+#### Service Not Accessible
+
+```bash
+# Check service
+kubectl get svc -n book-review-dev
+
+# Check endpoints
+kubectl get endpoints -n book-review-dev
+
+# Check LoadBalancer
+kubectl describe svc book-review-frontend -n book-review-dev
+
+# If LoadBalancer stuck in pending, check NSG rules
+```
+
+#### Database Connection Failures
+
+```bash
+# Verify MySQL is running
+az mysql flexible-server show \
+  --resource-group cloudproj-dev-rg \
+  --name cloudproj-dev-mysql-<suffix>
+
+# Check from pod
+kubectl exec -it <backend-pod> -n book-review-dev -- \
+  ping -c 3 cloudproj-dev-mysql-<suffix>.mysql.database.azure.com
+
+# Verify credentials in secrets
+kubectl get secret book-review-secrets -n book-review-dev -o yaml
+```
+
+### Getting Help
+
+1. **Check workflow logs** in GitHub Actions
+2. **Review pod logs** with kubectl
+3. **Check Azure Portal** for resource status
+4. **Review Terraform state** for infrastructure issues
+5. **Consult documentation:**
+   - [DEPLOYMENT.md](DEPLOYMENT.md)
+   - [BACKEND_SETUP.md](BACKEND_SETUP.md)
+   - [APPLICATION_DEPLOYMENT.md](k8s/APPLICATION_DEPLOYMENT.md)
+
+---
+
+## ✅ Development Best Practices
+
+### Code Quality
+
+- ✅ Run `terraform fmt` before committing
+- ✅ Run `terraform validate` to catch errors
+- ✅ Use consistent naming conventions
+- ✅ Add comments for complex logic
+- ✅ Tag all resources appropriately
+
+### Git Workflow
+
+- ✅ Create feature branches for changes
+- ✅ Write descriptive commit messages
+- ✅ Create PRs for code review
+- ✅ Keep commits atomic and focused
+- ✅ Never commit secrets or credentials
+
+### Testing
+
+- ✅ Test infrastructure changes in Dev first
+- ✅ Validate application locally before deploying
+- ✅ Monitor deployments in GitHub Actions
+- ✅ Check pod logs after deployment
+- ✅ Verify application functionality
+
+### Deployment Strategy
+
+| Change Type | Recommended Approach |
+|-------------|---------------------|
+| **Infrastructure** | GitHub Actions for all envs |
+| **Application code** | GitHub Actions (auto-deploy) |
+| **Quick hotfix** | Manual deployment to Dev, then promote |
+| **Config changes** | Update ConfigMaps/Secrets via kubectl |
+| **Database schema** | Run migrations from backend pod |
+
+### Environment Promotion
+
+```
+Dev (auto) → Stage (manual) → Prod (manual + approval)
+```
+
+1. **Dev:** Automatically deployed on push to `main`
+2. **Stage:** Manual GitHub Actions trigger after Dev validation
+3. **Prod:** Manual trigger with additional approval/review
+
+---
+
+## 📚 Additional Resources
+
+### Documentation
+- [DEPLOYMENT.md](DEPLOYMENT.md) - Comprehensive deployment guide
+- [BACKEND_SETUP.md](BACKEND_SETUP.md) - Remote state configuration
+- [BACKEND_QUICKSTART.md](BACKEND_QUICKSTART.md) - Quick start for backend
+- [APPLICATION_DEPLOYMENT.md](k8s/APPLICATION_DEPLOYMENT.md) - K8s deployment details
+- [Naming.md](Naming.md) - Resource naming conventions
+
+### External Resources
+- [Terraform Azure Provider](https://registry.terraform.io/providers/hashicorp/azurerm/latest/docs)
+- [Azure Kubernetes Service Docs](https://docs.microsoft.com/azure/aks/)
+- [GitHub Actions Documentation](https://docs.github.com/actions)
+- [kubectl Cheat Sheet](https://kubernetes.io/docs/reference/kubectl/cheatsheet/)
+- [Docker Documentation](https://docs.docker.com/)
+
+### Useful Commands Cheat Sheet
+
+```bash
+# Terraform
+terraform fmt -recursive
+terraform validate
+terraform plan -var-file=envs/dev/terraform.tfvars
+terraform apply -var-file=envs/dev/terraform.tfvars
+terraform output
+terraform state list
+
+# Azure CLI
+az login
+az account show
+az aks get-credentials --resource-group <rg> --name <aks>
+az acr login --name <acr>
+az acr repository list --name <acr>
+
+# kubectl
+kubectl get all -n book-review-dev
+kubectl logs -f deployment/<name> -n book-review-dev
+kubectl describe pod <pod> -n book-review-dev
+kubectl exec -it <pod> -n book-review-dev -- /bin/sh
+kubectl port-forward svc/<service> 8080:8080 -n book-review-dev
+kubectl scale deployment/<name> --replicas=3 -n book-review-dev
+
+# Docker
+docker build -t <image>:<tag> .
+docker push <image>:<tag>
+docker images
+docker ps
+docker logs <container>
+
+# Git
+git status
+git add .
+git commit -m "message"
+git push origin <branch>
+git checkout -b feature/<name>
+```
+
+---
+
+## 🎓 Learning Path for New Developers
+
+### Week 1: Setup and Basics
+- [ ] Set up local development environment
+- [ ] Clone repositories
+- [ ] Configure Azure CLI and kubectl
+- [ ] Review infrastructure code
+- [ ] Explore GitHub Actions workflows
+
+### Week 2: Hands-on Practice
+- [ ] Deploy to Dev using GitHub Actions
+- [ ] Access AKS cluster with kubectl
+- [ ] View application logs
+- [ ] Make minor code change and deploy
+- [ ] Review monitoring and logs
+
+### Week 3: Advanced Topics
+- [ ] Make infrastructure change (add resource)
+- [ ] Build Docker images locally
+- [ ] Push images to ACR
+- [ ] Update Kubernetes manifests
+- [ ] Troubleshoot deployment issues
+
+### Week 4: Production Readiness
+- [ ] Understand security best practices
+- [ ] Learn backup and recovery procedures
+- [ ] Practice incident response
+- [ ] Deploy to Stage environment
+- [ ] Shadow a production deployment
+
+---
+
+This developer guide provides comprehensive information for working with the infrastructure and application pipelines. For deployment procedures, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ## Remote Backend Setup Guide
 

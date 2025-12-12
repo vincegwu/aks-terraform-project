@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: book-review-backend
+  labels:
+    app: book-review
+    component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: book-review
+    component: backend
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http

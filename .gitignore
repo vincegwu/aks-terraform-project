@@ -42,11 +42,32 @@ terraform.rc
 *.local
 .env
 .env.local
+.env.*.local
 
 # Terraform state files (now in remote backend)
 *.tfstate
 *.tfstate.*
 terraform.tfstate.d/
+
+# Secrets and credentials
+*secret*
+*password*
+*credentials*
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
+
+# Application code (fetched during deployment)
+app-code/
+
+# Terraform outputs with sensitive data
+terraform-outputs.json
+
+# Kubernetes secrets (should be created via kubectl)
+k8s/configmaps/*secrets*.yaml
+!k8s/configmaps/app-secrets-template.yaml
 
 # Backend config with sensitive data
 backend-configs/*.tfbackend

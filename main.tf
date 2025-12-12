@@ -9,14 +9,15 @@ module "network" {
 }
 
 module "aks" {
-  source              = "./modules/aks"
-  project_name        = var.project_name
-  environment         = var.environment
-  location            = var.location
-  aks_min_count       = var.aks_min_count
-  aks_max_count       = var.aks_max_count
-  subnet_ids          = module.network.subnet_ids
-  resource_group_name = module.network.resource_group_name
+  source                 = "./modules/aks"
+  project_name           = var.project_name
+  environment            = var.environment
+  location               = var.location
+  aks_min_count          = var.aks_min_count
+  aks_max_count          = var.aks_max_count
+  subnet_ids             = module.network.subnet_ids
+  resource_group_name    = module.network.resource_group_name
+  enable_private_cluster = var.enable_private_aks_cluster
 }
 
 module "mysql" {
@@ -56,4 +57,5 @@ module "keyvault" {
   }
   private_subnet_id       = lookup(module.network.subnet_ids, "aks", "")
   enable_private_endpoint = var.create_private_endpoints
+  allowed_ip_ranges       = [] # Empty list for now, can be configured per environment
 }

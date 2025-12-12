@@ -1,9 +1,18 @@
 resource "azurerm_container_registry" "acr" {
-  name                = var.unique_suffix != "" ? "${var.project_name}${var.environment}acr${var.unique_suffix}" : "${var.project_name}${var.environment}acr"
-  location            = var.location
-  resource_group_name = var.resource_group_name
-  sku                 = var.acr_sku
-  admin_enabled       = false
+  name                          = var.unique_suffix != "" ? "${var.project_name}${var.environment}acr${var.unique_suffix}" : "${var.project_name}${var.environment}acr"
+  location                      = var.location
+  resource_group_name           = var.resource_group_name
+  sku                           = var.acr_sku
+  admin_enabled                 = false
+  public_network_access_enabled = !var.enable_private_endpoint
+
+  # network_rule_set is only supported for Premium SKU
+  dynamic "network_rule_set" {
+    for_each = var.acr_sku == "Premium" ? [1] : []
+    content {
+      default_action = var.enable_private_endpoint ? "Deny" : "Allow"
+    }
+  }
 
   dynamic "georeplications" {
     for_each = var.acr_sku == "Premium" ? [1] : []
@@ -32,18 +41,5 @@ resource "azurerm_private_endpoint" "acr_pe" {
     is_manual_connection           = false
     private_connection_resource_id = azurerm_container_registry.acr.id
     subresource_names              = ["registry"]
-
-    #subresource_names              = ["registry"]
-
   }
 }
-
-// Private DNS handling for ACR was removed — module creates only the optional
-// Private Endpoint. Manage private DNS outside this module if needed.
-
-// ...existing code...
-
-// Repository resources removed: `azurerm_container_registry_repository` is unsupported
-// Repositories are created on demand when pushing images to ACR. If you need
-// lifecycle rules or retention policies, use the `azurerm_container_registry_retention_policy`
-// resource or manage repositories via the Azure CLI / Az API.

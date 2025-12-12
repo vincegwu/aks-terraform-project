@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: book-review-frontend
+  labels:
+    app: book-review
+    component: frontend
+spec:
+  type: LoadBalancer
+  selector:
+    app: book-review
+    component: frontend
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: http

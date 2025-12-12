@@ -1,0 +1,301 @@
+name: Demo Destroy
+
+# Workflow Chain: Infrastructure Deploy → Application Deploy → Demo Destroy (MANUAL ONLY)
+# This workflow is NEVER automatically triggered and requires manual execution
+# Safety: Requires typing "DESTROY" to confirm deletion
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to Destroy'
+        required: true
+        type: choice
+        options:
+          - dev
+          - stage
+          - prod
+      destroy_infrastructure:
+        description: 'Destroy Infrastructure (Terraform resources)'
+        required: true
+        type: boolean
+        default: true
+      destroy_application:
+        description: 'Destroy Application (K8s resources)'
+        required: true
+        type: boolean
+        default: true
+      confirmation:
+        description: 'Type "DESTROY" to confirm'
+        required: true
+        type: string
+
+env:
+  TF_VERSION: '1.7.5'
+  K8S_PATH: './k8s'
+
+jobs:
+  validate-confirmation:
+    name: Validate Confirmation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirmation }}" != "DESTROY" ]; then
+            echo "❌ Confirmation failed. You must type 'DESTROY' to proceed."
+            exit 1
+          fi
+          echo "✅ Confirmation validated"
+      
+      - name: Display Destruction Plan
+        run: |
+          echo "⚠️ =========================================="
+          echo "⚠️  DESTRUCTION PLAN"
+          echo "⚠️ =========================================="
+          echo ""
+          echo "Environment: ${{ github.event.inputs.environment }}"
+          echo ""
+          echo "Will destroy:"
+          if [ "${{ github.event.inputs.destroy_application }}" == "true" ]; then
+            echo "  ✓ Application resources (K8s deployments, services)"
+          fi
+          if [ "${{ github.event.inputs.destroy_infrastructure }}" == "true" ]; then
+            echo "  ✓ Infrastructure (AKS, ACR, MySQL, VNet, etc.)"
+          fi
+          echo ""
+          echo "⚠️ This action CANNOT be undone!"
+          echo "⚠️ =========================================="
+
+  destroy-application:
+    name: Destroy Application
+    runs-on: ubuntu-latest
+    needs: validate-confirmation
+    if: github.event.inputs.destroy_application == 'true'
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Get AKS Credentials
+        id: get-aks
+        run: |
+          # Get AKS cluster details
+          AKS_NAME=$(az aks list \
+            --query "[?contains(name, '${{ github.event.inputs.environment }}')].name" \
+            -o tsv | head -n 1)
+          
+          RESOURCE_GROUP=$(az aks list \
+            --query "[?contains(name, '${{ github.event.inputs.environment }}')].resourceGroup" \
+            -o tsv | head -n 1)
+          
+          if [ -z "$AKS_NAME" ] || [ -z "$RESOURCE_GROUP" ]; then
+            echo "⚠️ AKS cluster not found for environment ${{ github.event.inputs.environment }}"
+            echo "aks-found=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "aks-found=true" >> $GITHUB_OUTPUT
+          echo "aks-name=$AKS_NAME" >> $GITHUB_OUTPUT
+          echo "resource-group=$RESOURCE_GROUP" >> $GITHUB_OUTPUT
+          
+          echo "✅ Using AKS: $AKS_NAME in $RESOURCE_GROUP"
+          
+          # Get credentials
+          az aks get-credentials \
+            --resource-group $RESOURCE_GROUP \
+            --name $AKS_NAME \
+            --overwrite-existing
+      
+      - name: List Application Resources
+        if: steps.get-aks.outputs.aks-found == 'true'
+        run: |
+          echo "📋 Current application resources:"
+          kubectl get all -l app=book-review -n book-review-${{ github.event.inputs.environment }} 2>/dev/null || echo "No resources found in namespace"
+          kubectl get all -l app=book-review --all-namespaces 2>/dev/null || echo "No resources found"
+      
+      - name: Delete Application Resources
+        if: steps.get-aks.outputs.aks-found == 'true'
+        run: |
+          echo "🗑️ Deleting application resources..."
+          
+          # Try to delete from specific namespace
+          kubectl delete all -l app=book-review -n book-review-${{ github.event.inputs.environment }} --ignore-not-found=true 2>/dev/null || true
+          kubectl delete configmap -l app=book-review -n book-review-${{ github.event.inputs.environment }} --ignore-not-found=true 2>/dev/null || true
+          kubectl delete secret book-review-secrets -n book-review-${{ github.event.inputs.environment }} --ignore-not-found=true 2>/dev/null || true
+          
+          # Also try default namespace
+          kubectl delete all -l app=book-review --ignore-not-found=true 2>/dev/null || true
+          kubectl delete configmap -l app=book-review --ignore-not-found=true 2>/dev/null || true
+          kubectl delete secret book-review-secrets --ignore-not-found=true 2>/dev/null || true
+          
+          # Delete namespace
+          kubectl delete namespace book-review-${{ github.event.inputs.environment }} --ignore-not-found=true 2>/dev/null || true
+          
+          echo "✅ Application resources deleted"
+      
+      - name: Verify Deletion
+        if: steps.get-aks.outputs.aks-found == 'true'
+        run: |
+          echo "🔍 Verifying deletion..."
+          REMAINING=$(kubectl get all -l app=book-review --all-namespaces 2>/dev/null | grep -v "No resources" | wc -l)
+          
+          if [ "$REMAINING" -gt 1 ]; then
+            echo "⚠️ Some resources may still be terminating:"
+            kubectl get all -l app=book-review --all-namespaces
+          else
+            echo "✅ All application resources deleted successfully"
+          fi
+
+  destroy-infrastructure:
+    name: Destroy Infrastructure
+    runs-on: ubuntu-latest
+    needs: [validate-confirmation, destroy-application]
+    if: |
+      always() && 
+      needs.validate-confirmation.result == 'success' &&
+      (needs.destroy-application.result == 'success' || needs.destroy-application.result == 'skipped') &&
+      github.event.inputs.destroy_infrastructure == 'true'
+    environment: ${{ github.event.inputs.environment }}
+    env:
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ secrets.TF_BACKEND_RESOURCE_GROUP }}" \
+            -backend-config="storage_account_name=${{ secrets.TF_BACKEND_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ secrets.TF_BACKEND_CONTAINER }}" \
+            -backend-config="key=${{ github.event.inputs.environment }}/terraform.tfstate"
+      
+      - name: Terraform Plan Destroy
+        run: |
+          terraform plan -destroy \
+            -var-file="envs/${{ github.event.inputs.environment }}/terraform.tfvars" \
+            -out=destroy-plan
+      
+      - name: Display Destroy Plan
+        run: |
+          echo "📋 Resources to be destroyed:"
+          terraform show destroy-plan
+      
+      - name: Terraform Destroy
+        run: |
+          echo "🗑️ Starting infrastructure destruction..."
+          terraform apply -auto-approve destroy-plan
+          echo "✅ Infrastructure destroyed successfully"
+      
+      - name: Verify Destruction
+        run: |
+          echo "🔍 Verifying resource group deletion..."
+          
+          RG_NAME="cloudproj-${{ github.event.inputs.environment }}-rg"
+          
+          if az group show --name $RG_NAME 2>/dev/null; then
+            echo "⚠️ Resource group still exists. Some resources may still be terminating."
+            az resource list --resource-group $RG_NAME --output table
+          else
+            echo "✅ Resource group deleted successfully"
+          fi
+      
+      - name: Clean Terraform State (Optional)
+        if: success()
+        run: |
+          echo "📝 Terraform state still exists in remote backend."
+          echo "To completely remove state, delete the blob:"
+          echo "  ${{ github.event.inputs.environment }}/terraform.tfstate"
+          echo "from storage account: ${{ secrets.TF_BACKEND_STORAGE_ACCOUNT }}"
+
+  cleanup-acr-images:
+    name: Cleanup ACR Images
+    runs-on: ubuntu-latest
+    needs: [validate-confirmation, destroy-infrastructure]
+    if: |
+      always() && 
+      needs.validate-confirmation.result == 'success' &&
+      github.event.inputs.destroy_infrastructure == 'true'
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Delete ACR Images
+        run: |
+          ACR_NAME=$(az acr list \
+            --query "[?contains(name, '${{ github.event.inputs.environment }}')].name" \
+            -o tsv | head -n 1)
+          
+          if [ -z "$ACR_NAME" ]; then
+            echo "⚠️ ACR not found (may already be deleted)"
+            exit 0
+          fi
+          
+          echo "🗑️ Deleting images from ACR: $ACR_NAME"
+          
+          # Delete book-review images
+          az acr repository delete --name $ACR_NAME --repository book-review-backend --yes 2>/dev/null || echo "Backend repository not found"
+          az acr repository delete --name $ACR_NAME --repository book-review-frontend --yes 2>/dev/null || echo "Frontend repository not found"
+          
+          echo "✅ ACR images cleaned up"
+
+  summary:
+    name: Destruction Summary
+    runs-on: ubuntu-latest
+    needs: [destroy-application, destroy-infrastructure, cleanup-acr-images]
+    if: always()
+    
+    steps:
+      - name: Display Summary
+        run: |
+          echo "📊 =========================================="
+          echo "📊  DESTRUCTION SUMMARY"
+          echo "📊 =========================================="
+          echo ""
+          echo "Environment: ${{ github.event.inputs.environment }}"
+          echo ""
+          echo "Results:"
+          echo "  Application Destroy: ${{ needs.destroy-application.result }}"
+          echo "  Infrastructure Destroy: ${{ needs.destroy-infrastructure.result }}"
+          echo "  ACR Cleanup: ${{ needs.cleanup-acr-images.result }}"
+          echo ""
+          
+          if [ "${{ needs.destroy-infrastructure.result }}" == "success" ] || \
+             [ "${{ needs.destroy-infrastructure.result }}" == "skipped" ]; then
+            echo "✅ Destruction completed successfully"
+          else
+            echo "❌ Some destruction steps failed. Check logs above."
+            exit 1
+          fi
+          
+          echo ""
+          echo "📝 Next steps:"
+          echo "  - Verify all resources are deleted in Azure Portal"
+          echo "  - Check for any remaining resources in resource group"
+          echo "  - Review storage account for Terraform state files"
+          echo ""
+          echo "📊 =========================================="
