@@ -11,7 +11,7 @@ subnets = {
 }
 
 
-aks_node_count = 4
+aks_node_count = 5
 
 mysql_admin_username = "adminuser"
 # Do NOT commit secrets. Set `mysql_admin_password` in CI secret store

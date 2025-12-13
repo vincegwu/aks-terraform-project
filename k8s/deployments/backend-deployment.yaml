@@ -6,7 +6,7 @@ metadata:
     app: book-review
     component: backend
 spec:
-  replicas: 2
+  replicas: 0
   selector:
     matchLabels:
       app: book-review
@@ -25,31 +25,35 @@ spec:
         - containerPort: 8080
           name: http
         env:
-        - name: DATABASE_HOST
+        - name: DB_HOST
           valueFrom:
             configMapKeyRef:
               name: book-review-config
               key: database_host
-        - name: DATABASE_PORT
+        - name: DB_PORT
           valueFrom:
             configMapKeyRef:
               name: book-review-config
               key: database_port
-        - name: DATABASE_NAME
+        - name: DB_NAME
           valueFrom:
             configMapKeyRef:
               name: book-review-config
               key: database_name
-        - name: DATABASE_USER
+        - name: DB_USER
           valueFrom:
             secretKeyRef:
               name: book-review-secrets
               key: database_user
-        - name: DATABASE_PASSWORD
+        - name: DB_PASS
           valueFrom:
             secretKeyRef:
               name: book-review-secrets
               key: database_password
+        - name: PORT
+          value: "8080"
+        - name: DB_DIALECT
+          value: "mysql"
         resources:
           requests:
             memory: "256Mi"
@@ -61,11 +65,15 @@ spec:
           httpGet:
             path: /health
             port: 8080
-          initialDelaySeconds: 30
+          initialDelaySeconds: 60
           periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
         readinessProbe:
           httpGet:
             path: /ready
             port: 8080
-          initialDelaySeconds: 10
+          initialDelaySeconds: 30
           periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3

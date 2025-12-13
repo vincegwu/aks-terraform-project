@@ -16,7 +16,7 @@ subnets = {
 }
 
 
-aks_min_count = 1
+aks_min_count = 3
 aks_max_count = 5
 
 mysql_admin_username = "adminuser"

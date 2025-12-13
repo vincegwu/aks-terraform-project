@@ -49,6 +49,24 @@ variable "availability_zones" {
   default     = []
 }
 
+variable "create_role_assignment" {
+  description = "Whether to create admin role assignment. Set to false if service principal lacks permissions."
+  type        = bool
+  default     = false
+}
+
+variable "acr_id" {
+  description = "Azure Container Registry ID for AKS integration"
+  type        = string
+  default     = ""
+}
+
+variable "create_acr_role_assignment" {
+  description = "Whether to create ACR pull role assignment. Set to false if service principal lacks permissions."
+  type        = bool
+  default     = false
+}
+
 variable "vm_size" {
   description = "VM size for AKS node pool. Defaults to Standard_D2s_v3 (available in most regions)."
   type        = string

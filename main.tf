@@ -18,6 +18,7 @@ module "aks" {
   subnet_ids             = module.network.subnet_ids
   resource_group_name    = module.network.resource_group_name
   enable_private_cluster = var.enable_private_aks_cluster
+  acr_id                 = module.acr.acr_id
 }
 
 module "mysql" {
