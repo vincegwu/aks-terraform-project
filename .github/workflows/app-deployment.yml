@@ -277,16 +277,21 @@ jobs:
           echo "  ACR: $ACR_NAME"
           echo "  MySQL FQDN: $MYSQL_FQDN"
           
+          if [ -z "$MYSQL_FQDN" ] || [ "$MYSQL_FQDN" == "null" ]; then
+            echo "❌ ERROR: MYSQL_FQDN is empty or null!"
+            exit 1
+          fi
+          
           # Update backend deployment
           sed -i "s|<ACR_NAME>\.azurecr\.io/book-review-backend:latest|${{ needs.build-and-push-images.outputs.backend-image }}|g" \
             ${{ env.K8S_PATH }}/deployments/backend-deployment.yaml
           
-          # Update frontend deployment
+          # Update frontend deployment  
           sed -i "s|<ACR_NAME>\.azurecr\.io/book-review-frontend:latest|${{ needs.build-and-push-images.outputs.frontend-image }}|g" \
             ${{ env.K8S_PATH }}/deployments/frontend-deployment.yaml
           
-          # Update ConfigMap with MySQL FQDN
-          sed -i "s|<MYSQL_FQDN>|$MYSQL_FQDN|g" \
+          # Update ConfigMap with MySQL FQDN - use explicit string
+          sed -i "s|database_host: \"<MYSQL_FQDN>\"|database_host: \"$MYSQL_FQDN\"|g" \
             ${{ env.K8S_PATH }}/configmaps/app-config.yaml
           
           # Verify replacements
@@ -301,6 +306,7 @@ jobs:
           # Check if placeholder still exists
           if grep -q "<MYSQL_FQDN>" ${{ env.K8S_PATH }}/configmaps/app-config.yaml; then
             echo "❌ ERROR: MYSQL_FQDN placeholder not replaced!"
+            cat ${{ env.K8S_PATH }}/configmaps/app-config.yaml
             exit 1
           fi
           
@@ -323,8 +329,17 @@ jobs:
       
       - name: Deploy ConfigMap
         run: |
+          # Show the ConfigMap before applying
+          echo "📋 ConfigMap content:"
+          cat ${{ env.K8S_PATH }}/configmaps/app-config.yaml
+          
           kubectl apply -f ${{ env.K8S_PATH }}/configmaps/app-config.yaml
           echo "✅ ConfigMap deployed"
+          
+          # Verify what was actually deployed
+          echo ""
+          echo "📋 Deployed ConfigMap verification:"
+          kubectl get configmap book-review-config -o yaml
       
       - name: Deploy Backend
         run: |
