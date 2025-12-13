@@ -346,8 +346,11 @@ jobs:
           kubectl apply -f ${{ env.K8S_PATH }}/deployments/backend-deployment.yaml
           kubectl apply -f ${{ env.K8S_PATH }}/services/backend-service.yaml
           
+          echo "⏳ Waiting for backend pods to be created..."
+          sleep 10
+          
           echo "⏳ Waiting for backend pods to be ready..."
-          kubectl wait --for=condition=ready pod -l component=backend --timeout=300s || true
+          kubectl wait --for=condition=ready pod -l component=backend --timeout=300s 2>/dev/null || echo "⚠️ Backend pods not ready yet, check debug output"
           
           echo "✅ Backend deployed"
       
@@ -355,7 +358,7 @@ jobs:
         if: always()
         run: |
           echo "🔍 Backend Pod Status:"
-          kubectl get pods -l component=backend -o wide
+          kubectl get pods -l component=backend -o wide || echo "No backend pods found"
           
           echo ""
           echo "📋 Backend Pod Events:"
@@ -363,29 +366,40 @@ jobs:
           
           echo ""
           echo "📜 Backend Pod Logs (first 3 pods):"
-          PODS=$(kubectl get pod -l component=backend -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | head -3)
-          for POD in $PODS; do
-            echo ""
-            echo "=== Logs from $POD ==="
-            kubectl logs $POD --tail=50 || echo "Failed to get logs from $POD"
-          done
+          PODS=$(kubectl get pod -l component=backend -o jsonpath='{.items[*].metadata.name}' 2>/dev/null | tr ' ' '\n' | head -3)
+          if [ -n "$PODS" ]; then
+            for POD in $PODS; do
+              echo ""
+              echo "=== Logs from $POD ==="
+              kubectl logs $POD --tail=50 2>/dev/null || echo "Failed to get logs from $POD"
+            done
+          else
+            echo "No backend pods available for logs"
+          fi
           
           echo ""
-          echo "🔍 Backend Pod Descriptions (first pod):"
-          FIRST_POD=$(kubectl get pod -l component=backend -o jsonpath='{.items[0].metadata.name}')
-          kubectl describe pod $FIRST_POD | tail -80
+          echo "🔍 Backend Pod Description (first pod):"
+          FIRST_POD=$(kubectl get pod -l component=backend -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+          if [ -n "$FIRST_POD" ]; then
+            kubectl describe pod $FIRST_POD | tail -80
+          else
+            echo "No backend pods to describe"
+          fi
           
           echo ""
           echo "📋 ConfigMap Values:"
-          kubectl get configmap book-review-config -o yaml | grep -A 5 "data:"
+          kubectl get configmap book-review-config -o yaml | grep -A 5 "data:" || echo "ConfigMap not found"
       
       - name: Deploy Frontend
         run: |
           kubectl apply -f ${{ env.K8S_PATH }}/deployments/frontend-deployment.yaml
           kubectl apply -f ${{ env.K8S_PATH }}/services/frontend-service.yaml
           
+          echo "⏳ Waiting for frontend pods to be created..."
+          sleep 10
+          
           echo "⏳ Waiting for frontend pods to be ready..."
-          kubectl wait --for=condition=ready pod -l component=frontend --timeout=300s || true
+          kubectl wait --for=condition=ready pod -l component=frontend --timeout=300s 2>/dev/null || echo "⚠️ Frontend pods not ready yet, check debug output"
           
           echo "✅ Frontend deployed"
       
