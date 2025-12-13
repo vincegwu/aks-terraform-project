@@ -364,19 +364,30 @@ jobs:
       
       - name: Debug Backend Deployment
         if: always()
+        continue-on-error: true
         run: |
+          set +e  # Don't exit on error
+          
           echo "🔍 Backend Pod Status:"
-          kubectl get pods -l component=backend -o wide || echo "No backend pods found"
+          kubectl get pods -l component=backend -o wide 2>/dev/null || echo "No backend pods found"
           
           echo ""
-          echo "📋 Backend Pod Events:"
-          kubectl get events --field-selector involvedObject.kind=Pod --sort-by='.lastTimestamp' | grep backend || echo "No backend events found"
+          echo "📋 Backend Deployment Status:"
+          kubectl get deployment book-review-backend 2>/dev/null || echo "Deployment not found"
           
           echo ""
-          echo "📜 Backend Pod Logs (first 3 pods):"
-          PODS=$(kubectl get pod -l component=backend -o jsonpath='{.items[*].metadata.name}' 2>/dev/null | tr ' ' '\n' | head -3)
+          echo "📋 Backend ReplicaSet Status:"
+          kubectl get rs -l app=book-review,component=backend 2>/dev/null || echo "No ReplicaSets found"
+          
+          echo ""
+          echo "📋 Recent Events (all):"
+          kubectl get events --sort-by='.lastTimestamp' 2>/dev/null | tail -20 || echo "No events found"
+          
+          echo ""
+          echo "📜 Backend Pod Logs (if any exist):"
+          PODS=$(kubectl get pod -l component=backend -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
           if [ -n "$PODS" ]; then
-            for POD in $PODS; do
+            for POD in $(echo $PODS | tr ' ' '\n' | head -3); do
               echo ""
               echo "=== Logs from $POD ==="
               kubectl logs $POD --tail=50 2>/dev/null || echo "Failed to get logs from $POD"
@@ -386,17 +397,10 @@ jobs:
           fi
           
           echo ""
-          echo "🔍 Backend Pod Description (first pod):"
-          FIRST_POD=$(kubectl get pod -l component=backend -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-          if [ -n "$FIRST_POD" ]; then
-            kubectl describe pod $FIRST_POD | tail -80
-          else
-            echo "No backend pods to describe"
-          fi
-          
-          echo ""
           echo "📋 ConfigMap Values:"
-          kubectl get configmap book-review-config -o yaml | grep -A 5 "data:" || echo "ConfigMap not found"
+          kubectl get configmap book-review-config -o yaml 2>/dev/null | grep -A 5 "data:" || echo "ConfigMap not found"
+          
+          exit 0  # Always succeed
       
       - name: Deploy Frontend
         run: |
