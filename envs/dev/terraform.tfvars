@@ -30,7 +30,8 @@ enable_private_aks_cluster = false
 create_acr_role_assignment = true # Enabled - service principal now has User Access Administrator role
 
 # AKS Access - Grant service principal admin access to manage AKS cluster
-create_aks_admin_role_assignment = true # Required for kubectl access from CI/CD
+# Set to false temporarily if role assignment already exists to avoid 409 conflict
+create_aks_admin_role_assignment = false # Role assignment already exists in Azure
 
 # Optional: Override ACR SKU (default is "Standard"; use "Premium" for geo-replication)
 # acr_sku = "Standard"
