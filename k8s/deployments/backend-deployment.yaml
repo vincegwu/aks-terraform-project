@@ -6,7 +6,7 @@ metadata:
     app: book-review
     component: backend
 spec:
-  replicas: 0
+  replicas: 2
   selector:
     matchLabels:
       app: book-review

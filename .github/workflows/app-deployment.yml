@@ -415,6 +415,28 @@ jobs:
           
           echo "✅ Frontend deployment applied"
       
+      - name: Debug Frontend Issues
+        if: always()
+        run: |
+          echo "🔍 Checking frontend pod logs..."
+          PODS=$(kubectl get pod -l component=frontend -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
+          if [ -n "$PODS" ]; then
+            for POD in $(echo $PODS | tr ' ' '\n' | head -3); do
+              echo ""
+              echo "=== Logs from $POD ==="
+              kubectl logs $POD --tail=100 2>/dev/null || echo "Failed to get logs from $POD"
+              echo ""
+              echo "=== Previous logs (if crashed) ==="
+              kubectl logs $POD --previous --tail=50 2>/dev/null || echo "No previous logs"
+            done
+          else
+            echo "No frontend pods available for logs"
+          fi
+          
+          echo ""
+          echo "📋 Frontend Pod Events:"
+          kubectl get events --field-selector involvedObject.name!='' | grep frontend || echo "No frontend events"
+      
       - name: Get Application URL
         run: |
           echo "⏳ Waiting for LoadBalancer IP assignment (this may take 2-3 minutes)..."
