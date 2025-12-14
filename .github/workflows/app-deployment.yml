@@ -256,16 +256,15 @@ jobs:
           echo "  AKS: ${{ needs.build-and-push-images.outputs.aks-cluster-name }}"
           echo "  Resource Group: ${{ needs.build-and-push-images.outputs.resource-group }}"
           
-          # Get AKS credentials with Azure AD authentication
+          # Get AKS credentials with admin access (uses cluster certificates)
+          # This bypasses Azure RBAC and works with service principal authentication
           az aks get-credentials \
             --resource-group ${{ needs.build-and-push-images.outputs.resource-group }} \
             --name ${{ needs.build-and-push-images.outputs.aks-cluster-name }} \
+            --admin \
             --overwrite-existing
           
-          # Convert kubeconfig to use kubelogin for Azure AD auth
-          kubelogin convert-kubeconfig -l azurecli
-          
-          echo "✅ AKS credentials configured successfully"
+          echo "✅ AKS credentials configured successfully with admin access"
       
       - name: Set MySQL FQDN
         id: get-mysql
