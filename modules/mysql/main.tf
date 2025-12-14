@@ -11,6 +11,15 @@ resource "azurerm_mysql_flexible_server" "mysql" {
   geo_redundant_backup_enabled = false
 }
 
+# Create the database
+resource "azurerm_mysql_flexible_database" "book_review_db" {
+  name                = "book_review_db"
+  resource_group_name = var.resource_group_name
+  server_name         = azurerm_mysql_flexible_server.mysql.name
+  charset             = "utf8mb4"
+  collation           = "utf8mb4_unicode_ci"
+}
+
 # Firewall rule to allow Azure services (when not using private endpoint)
 resource "azurerm_mysql_flexible_server_firewall_rule" "allow_azure_services" {
   count               = var.enable_private_endpoint ? 0 : 1
