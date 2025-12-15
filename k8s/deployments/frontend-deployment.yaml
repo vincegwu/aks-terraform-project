@@ -21,11 +21,14 @@ spec:
       - name: frontend
         image: <ACR_NAME>.azurecr.io/book-review-frontend:latest
         imagePullPolicy: Always
+
+        command: ["npx"]
+        args: ["next", "start", "-p", "3000", "-H", "0.0.0.0"]
+        
         ports:
         - containerPort: 3000
           name: http
-        command: ["npm"]
-        args: ["run", "start"]
+
         env:
         - name: NODE_ENV
           value: "production"
