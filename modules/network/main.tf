@@ -92,6 +92,24 @@ resource "azurerm_network_security_rule" "aks_allow_vnet" {
   resource_group_name         = azurerm_resource_group.rg.name
 }
 
+# Allow HTTP/HTTPS traffic from Internet to LoadBalancer
+resource "azurerm_network_security_rule" "aks_allow_http" {
+  count                  = contains(keys(var.subnets), "aks") ? 1 : 0
+  name                   = "${var.project_name}-${var.environment}-aks-allow-http"
+  priority               = 115
+  direction              = "Inbound"
+  access                 = "Allow"
+  protocol               = "Tcp"
+  source_port_range      = "*"
+  destination_port_ranges = ["80", "443"]
+
+  source_address_prefix      = "Internet"
+  destination_address_prefix = azurerm_subnet.subnets["aks"].address_prefixes[0]
+
+  network_security_group_name = azurerm_network_security_group.nsgs["aks"].name
+  resource_group_name         = azurerm_resource_group.rg.name
+}
+
 resource "azurerm_network_security_rule" "aks_deny_internet" {
   count                  = contains(keys(var.subnets), "aks") ? 1 : 0
   name                   = "${var.project_name}-${var.environment}-aks-deny-internet"
