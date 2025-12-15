@@ -53,3 +53,39 @@ resource "azurerm_private_endpoint" "db_pe" {
 
   depends_on = [azurerm_private_dns_zone_virtual_network_link.mysql]
 }
+
+# Configure MySQL server parameters to prevent connection timeouts
+resource "azurerm_mysql_flexible_server_configuration" "wait_timeout" {
+  name                = "wait_timeout"
+  resource_group_name = var.resource_group_name
+  server_name         = azurerm_mysql_flexible_server.mysql.name
+  value               = "28800"  # 8 hours (default, but explicitly set)
+}
+
+resource "azurerm_mysql_flexible_server_configuration" "interactive_timeout" {
+  name                = "interactive_timeout"
+  resource_group_name = var.resource_group_name
+  server_name         = azurerm_mysql_flexible_server.mysql.name
+  value               = "28800"  # 8 hours
+}
+
+resource "azurerm_mysql_flexible_server_configuration" "connect_timeout" {
+  name                = "connect_timeout"
+  resource_group_name = var.resource_group_name
+  server_name         = azurerm_mysql_flexible_server.mysql.name
+  value               = "10"  # 10 seconds (default is 10)
+}
+
+resource "azurerm_mysql_flexible_server_configuration" "net_read_timeout" {
+  name                = "net_read_timeout"
+  resource_group_name = var.resource_group_name
+  server_name         = azurerm_mysql_flexible_server.mysql.name
+  value               = "30"  # 30 seconds (default is 30)
+}
+
+resource "azurerm_mysql_flexible_server_configuration" "net_write_timeout" {
+  name                = "net_write_timeout"
+  resource_group_name = var.resource_group_name
+  server_name         = azurerm_mysql_flexible_server.mysql.name
+  value               = "60"  # 60 seconds (default is 60)
+}
