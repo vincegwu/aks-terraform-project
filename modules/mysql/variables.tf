@@ -31,3 +31,33 @@ variable "mysql_sku_name" {
   # Use a provider-compatible SKU. Format: <tier>_<family>_<version>
   default = "GP_Standard_D2ds_v4"
 }
+
+variable "mysql_wait_timeout" {
+  description = "MySQL wait_timeout parameter in seconds"
+  type        = number
+  default     = 28800  # 8 hours
+}
+
+variable "mysql_interactive_timeout" {
+  description = "MySQL interactive_timeout parameter in seconds"
+  type        = number
+  default     = 28800  # 8 hours
+}
+
+variable "mysql_connect_timeout" {
+  description = "MySQL connect_timeout parameter in seconds"
+  type        = number
+  default     = 10
+}
+
+variable "mysql_net_read_timeout" {
+  description = "MySQL net_read_timeout parameter in seconds"
+  type        = number
+  default     = 30
+}
+
+variable "mysql_net_write_timeout" {
+  description = "MySQL net_write_timeout parameter in seconds"
+  type        = number
+  default     = 60
+}
