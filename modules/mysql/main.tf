@@ -9,12 +9,15 @@ resource "azurerm_mysql_flexible_server" "mysql" {
   version  = "8.0.21"
   sku_name = var.mysql_sku_name
 
+  # VNet Integration: Inject MySQL server into the database subnet
+  # This is the recommended approach for Azure MySQL Flexible Server
+  delegated_subnet_id = var.subnet_ids["database"]
+  private_dns_zone_id = azurerm_private_dns_zone.mysql.id
 
   backup_retention_days        = 7
   geo_redundant_backup_enabled = false
 
-  # `public_network_access_enabled` is managed by the provider and cannot be set
-  # directly in some provider versions, so remove explicit configuration.
+  depends_on = [azurerm_private_dns_zone_virtual_network_link.mysql]
 }
 
 # Private DNS Zone for MySQL Private Link
@@ -32,27 +35,9 @@ resource "azurerm_private_dns_zone_virtual_network_link" "mysql" {
   registration_enabled  = false
 }
 
-# Private endpoint to database subnet
-resource "azurerm_private_endpoint" "db_pe" {
-  name                = "${var.project_name}-${var.environment}-db-pe"
-  location            = var.location
-  resource_group_name = var.resource_group_name
-  subnet_id           = var.subnet_ids["database"]
-
-  private_service_connection {
-    name                           = "${var.project_name}-${var.environment}-db-psc"
-    is_manual_connection           = false
-    private_connection_resource_id = azurerm_mysql_flexible_server.mysql.id
-    subresource_names              = ["mysqlServer"]
-  }
-
-  private_dns_zone_group {
-    name                 = "mysql-dns-zone-group"
-    private_dns_zone_ids = [azurerm_private_dns_zone.mysql.id]
-  }
-
-  depends_on = [azurerm_private_dns_zone_virtual_network_link.mysql]
-}
+# Private endpoint is NOT needed when using VNet Integration (delegated_subnet_id)
+# VNet Integration provides direct network injection into the database subnet
+# which is more secure and eliminates the need for private endpoints
 
 # Configure MySQL server parameters to prevent connection timeouts
 resource "azurerm_mysql_flexible_server_configuration" "wait_timeout" {

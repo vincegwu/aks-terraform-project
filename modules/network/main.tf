@@ -28,6 +28,21 @@ resource "azurerm_subnet" "subnets" {
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = each.value.address_prefixes
+
+  # Delegate database subnet to MySQL Flexible Server
+  # This is required for VNet Integration
+  dynamic "delegation" {
+    for_each = each.key == "database" ? [1] : []
+    content {
+      name = "mysql-delegation"
+      service_delegation {
+        name = "Microsoft.DBforMySQL/flexibleServers"
+        actions = [
+          "Microsoft.Network/virtualNetworks/subnets/join/action",
+        ]
+      }
+    }
+  }
 }
 
 # Associate NSG with Subnets
