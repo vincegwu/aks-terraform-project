@@ -65,3 +65,20 @@ variable "enable_private_cluster" {
   description = "Enable private cluster (API server accessible only via private network)"
   default     = true
 }
+
+variable "ingress_domain" {
+  description = "The fully qualified domain name to assign to the AKS Ingress"
+  type        = string
+  default     = ""  # Optional: can be overridden in root module
+}
+
+variable "dns_zone_name" {
+  description = "Root DNS zone name (e.g. bookreview.dev)"
+  type        = string
+}
+
+variable "ingress_subdomain" {
+  description = "Ingress subdomain (e.g. app)"
+  type        = string
+  default     = "app"
+}

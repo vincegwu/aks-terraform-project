@@ -6,13 +6,8 @@ metadata:
   labels:
     app: book-review
 data:
-  # Frontend calls backend via Ingress path
-  backend_api_url: "/api"
-
-  # Database configuration (non-sensitive)
-  database_host: "cloudproj-dev-mysql-01b0dd.mysql.database.azure.com"  # Replace at runtime from Terraform outputs
+  backend_api_url: "http://app.berryexcel.online/api"  # full URL
+  database_host: "cloudproj-dev-mysql-01b0dd.mysql.database.azure.com"
   database_port: "3306"
   database_name: "book_review_db"
-
-  # CORS configuration (allow frontend access)
-  allowed_origins: "http://localhost:8080,http://20.28.58.135"
+  allowed_origins: "http://localhost:8080,http://app.berryexcel.online"
