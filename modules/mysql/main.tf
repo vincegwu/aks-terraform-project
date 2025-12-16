@@ -9,7 +9,7 @@ resource "azurerm_mysql_flexible_server" "mysql" {
 
   backup_retention_days        = 7
   geo_redundant_backup_enabled = false
-  
+
   # Disable public access when using private endpoint (production)
   # Enable public access when not using private endpoint (dev/testing)
   public_network_access_enabled = var.enable_private_endpoint ? false : true
