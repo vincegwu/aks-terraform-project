@@ -22,7 +22,7 @@ AKS cluster could not resolve or reach the MySQL database when using Private End
 
 ### 3. **Dependency Chain**
    ```
-   MySQL Server → Private DNS Zone → DNS Zone VNet Link → Private Endpoint
+   MySQL Server → Private DNS Zone → DNS Zone VNet Link → Private Endpoint.
    ```
 
 ## How It Works Now
