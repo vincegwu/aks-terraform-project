@@ -5,15 +5,13 @@ metadata:
   namespace: book-review-dev
   annotations:
     nginx.ingress.kubernetes.io/use-regex: "true"
-    nginx.ingress.kubernetes.io/rewrite-target: /$2
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
 spec:
   ingressClassName: nginx
   rules:
-  - host: app.berryexcel.online
-    http:
+  - http:
       paths:
-      # Backend API
+
+      # ✅ Backend API
       - path: /api(/|$)(.*)
         pathType: ImplementationSpecific
         backend:
@@ -22,9 +20,18 @@ spec:
             port:
               number: 3001
 
-      # Frontend
-      - path: /
-        pathType: Prefix
+      # ✅ Next.js static assets (CRITICAL)
+      - path: /_next(/|$)(.*)
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: book-review-frontend
+            port:
+              number: 3000
+
+      # ✅ Frontend pages
+      - path: /(.*)
+        pathType: ImplementationSpecific
         backend:
           service:
             name: book-review-frontend

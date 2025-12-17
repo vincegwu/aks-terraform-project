@@ -534,7 +534,11 @@ jobs:
           exit 0  # Always succeed
       
       - name: Deploy Frontend
+        env:
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
         run: |
+          echo "Injecting NEXT_PUBLIC_API_URL: $NEXT_PUBLIC_API_URL"
+          # Optionally, print to verify (remove in production)
           kubectl apply -f ${{ env.K8S_PATH }}/deployments/frontend-deployment.yaml
           kubectl apply -f ${{ env.K8S_PATH }}/services/frontend-service.yaml
           
