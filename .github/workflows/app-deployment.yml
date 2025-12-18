@@ -67,7 +67,7 @@ jobs:
         run: |
           APP_REPO="${{ github.event.inputs.app_repository }}"
           APP_BRANCH="${{ github.event.inputs.app_branch }}"
-          git clone --branch $APP_BRANCH --depth 1 https://github.com/$APP_REPO.git .
+          git clone --branch $APP_BRANCH --depth 1 https://github.com/$APP_REPO.git app
           echo "✅ App repo fetched"
 
       - name: Extract Terraform Outputs
@@ -99,13 +99,13 @@ jobs:
       - name: Build & Push Backend Image
         run: |
           docker build -t ${{ steps.get-infra.outputs.acr-login-server }}/book-review-backend:${{ github.event.inputs.backend_image_tag }} \
-            -f ./docker/backend.Dockerfile .
+            -f ./docker/backend.Dockerfile ./app
           docker push ${{ steps.get-infra.outputs.acr-login-server }}/book-review-backend:${{ github.event.inputs.backend_image_tag }}
 
       - name: Build & Push Frontend Image
         run: |
           docker build -t ${{ steps.get-infra.outputs.acr-login-server }}/book-review-frontend:${{ github.event.inputs.frontend_image_tag }} \
-            -f ./docker/frontend.Dockerfile .
+            -f ./docker/frontend.Dockerfile ./app
           docker push ${{ steps.get-infra.outputs.acr-login-server }}/book-review-frontend:${{ github.event.inputs.frontend_image_tag }}
 
   deploy-to-aks:
