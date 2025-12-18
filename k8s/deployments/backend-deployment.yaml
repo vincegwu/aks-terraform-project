@@ -19,15 +19,24 @@ spec:
         component: backend
     spec:
       terminationGracePeriodSeconds: 30
+
       containers:
         - name: backend
-          image: cloudprojdevacr01b0dd.azurecr.io/book-review-backend:latest
+          image: cloudprojdevacr01b0dd.azurecr.io/book-review-backend:__IMAGE_TAG__
           imagePullPolicy: Always
+
           ports:
-            - containerPort: 3001
-              name: http
+            - name: http
+              containerPort: 3001
 
           env:
+            - name: PORT
+              value: "3001"
+            - name: NODE_ENV
+              value: "production"
+            - name: DB_DIALECT
+              value: "mysql"
+
             - name: DB_HOST
               valueFrom:
                 configMapKeyRef:
@@ -58,12 +67,6 @@ spec:
                 secretKeyRef:
                   name: book-review-secrets
                   key: jwt_secret
-            - name: PORT
-              value: "3001"
-            - name: DB_DIALECT
-              value: "mysql"
-            - name: NODE_ENV
-              value: "production"
             - name: ALLOWED_ORIGINS
               valueFrom:
                 configMapKeyRef:
@@ -72,39 +75,43 @@ spec:
 
           resources:
             requests:
-              memory: "256Mi"
               cpu: "250m"
+              memory: "256Mi"
             limits:
-              memory: "512Mi"
               cpu: "500m"
+              memory: "512Mi"
 
           startupProbe:
             httpGet:
-              path: /
+              path: /health
               port: 3001
             failureThreshold: 30
             periodSeconds: 10
 
           readinessProbe:
             httpGet:
-              path: /
+              path: /health
               port: 3001
-            initialDelaySeconds: 60
+            initialDelaySeconds: 20
             periodSeconds: 10
-            timeoutSeconds: 10
-            failureThreshold: 6
-
+            timeoutSeconds: 5
+            failureThreshold: 3
 
           livenessProbe:
             httpGet:
-              path: /
+              path: /health
               port: 3001
             initialDelaySeconds: 30
             periodSeconds: 20
-            timeoutSeconds: 10
-            failureThreshold: 6
+            timeoutSeconds: 5
+            failureThreshold: 3
 
           lifecycle:
             preStop:
               exec:
                 command: ["sh", "-c", "sleep 10"]
+
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1001
+            allowPrivilegeEscalation: false

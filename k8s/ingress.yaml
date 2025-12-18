@@ -11,29 +11,29 @@ spec:
   rules:
   - http:
       paths:
-      # 🔹 Backend API
-      - path: /api(/|$)(.*)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: book-review-backend
-            port:
-              number: 3001
+        # 🔹 Backend API
+        - path: /api(/|$)(.*)
+          pathType: ImplementationSpecific
+          backend:
+            service:
+              name: book-review-backend
+              port:
+                number: 3001
 
-      # 🔹 Next.js static assets
-      - path: /_next(/|$)(.*)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: book-review-frontend
-            port:
-              number: 3000
+        # 🔹 Next.js static assets
+        - path: /_next(/|$)(.*)
+          pathType: ImplementationSpecific
+          backend:
+            service:
+              name: book-review-frontend
+              port:
+                number: 3000
 
-      # 🔹 Frontend pages
-      - path: /(.*)
-        pathType: ImplementationSpecific
-        backend:
-          service:
-            name: book-review-frontend
-            port:
-              number: 3000
+        # 🔹 Frontend pages
+        - path: /(.*)
+          pathType: ImplementationSpecific
+          backend:
+            service:
+              name: book-review-frontend
+              port:
+                number: 3000

@@ -16,38 +16,37 @@ on:
           - stage
           - prod
       frontend_image_tag:
-        description: 'Frontend Image Tag'
-        required: false
-        default: 'latest'
+        description: Frontend Image Tag
+        required: true
+        default: latest
       backend_image_tag:
-        description: 'Backend Image Tag'
-        required: false
-        default: 'latest'
+        description: Backend Image Tag
+        required: true
+        default: latest
       run_id:
-        description: 'Infrastructure workflow run ID (auto-filled)'
-        required: false
-        type: string
+        description: Terraform workflow run ID
+        required: true
       app_repository:
-        description: 'Application GitHub Repository (e.g., owner/repo)'
+        description: Application repository
         required: false
-        default: 'pravinmishraaws/book-review-app'
-        type: string
+        default: pravinmishraaws/book-review-app
       app_branch:
-        description: 'Application Repository Branch'
+        description: Application Repository Branch
         required: false
-        default: 'main'
-        type: string
+        default: main
 
 env:
-  FRONTEND_PATH: './book-review-app/frontend'
-  BACKEND_PATH: './book-review-app/backend'
-  K8S_PATH: './k8s'
+  FRONTEND_PATH: ./book-review-app/frontend
+  BACKEND_PATH: ./book-review-app/backend
+  K8S_PATH: ./k8s
+  NAMESPACE: book-review-${{ github.event.inputs.environment }}
 
 jobs:
   build-and-push-images:
     name: Build and Push Container Images
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment }}
+
     outputs:
       acr-login-server: ${{ steps.get-infra.outputs.acr-login-server }}
       aks-cluster-name: ${{ steps.get-infra.outputs.aks-cluster-name }}
@@ -70,8 +69,8 @@ jobs:
       
       - name: Fetch Application Code from Repository
         run: |
-          APP_REPO="${{ github.event.inputs.app_repository || 'pravinmishraaws/book-review-app' }}"
-          APP_BRANCH="${{ github.event.inputs.app_branch || 'main' }}"
+          APP_REPO="${{ github.event.inputs.app_repository }}"
+          APP_BRANCH="${{ github.event.inputs.app_branch }}"
           
           echo "📥 Fetching application code from repository..."
           echo "Repository: $APP_REPO"
@@ -145,167 +144,197 @@ jobs:
       
       - name: Build and Push Backend Image
         run: |
-          # Check if backend directory exists
-          if [ ! -d "${{ env.BACKEND_PATH }}" ]; then
-            echo "⚠️ Backend directory not found at ${{ env.BACKEND_PATH }}"
-            echo "Creating a sample Dockerfile for demonstration..."
-            mkdir -p ${{ env.BACKEND_PATH }}
-            cat > ${{ env.BACKEND_PATH }}/Dockerfile <<EOF
-          FROM node:18-alpine
-          WORKDIR /app
-          COPY package*.json ./
-          RUN npm ci --only=production || true
-          COPY . .
-          EXPOSE 8080
-          CMD ["npm", "start"]
-          EOF
-          fi
+          # # Check if backend directory exists
+          # # if [ ! -d "${{ env.BACKEND_PATH }}" ]; then
+          # #   echo "⚠️ Backend directory not found at ${{ env.BACKEND_PATH }}"
+          # #   echo "Creating a sample Dockerfile for demonstration..."
+          # mkdir -p ${{ env.BACKEND_PATH }}
+          # cat > ${{ env.BACKEND_PATH }}/Dockerfile <<EOF
+
+          # FROM node:18-alpine
+          # WORKDIR /app
+          # COPY package*.json ./
+          # RUN npm ci --only=production || true
+          # COPY . .
+          # EXPOSE 8080
+          # CMD ["npm", "start"]
+          # EOF
+
+          # # fi
           
-          docker build -t ${{ steps.get-infra.outputs.acr-login-server }}/book-review-backend:${{ github.event.inputs.backend_image_tag }} \
+          docker build \
+          -f ./docker/backend.Dockerfile \
+          -t ${{ steps.get-infra.outputs.acr-login-server }}/book-review-backend:${{ github.event.inputs.backend_image_tag }} \
             ${{ env.BACKEND_PATH }}
           
           docker push ${{ steps.get-infra.outputs.acr-login-server }}/book-review-backend:${{ github.event.inputs.backend_image_tag }}
           
           echo "✅ Backend image pushed successfully"
       
-      - name: Build and Push Frontend Image
-        env:
-          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
-        run: |
-          # Check if frontend directory exists
-          if [ ! -d "${{ env.FRONTEND_PATH }}" ]; then
-            echo "⚠️ Frontend directory not found at ${{ env.FRONTEND_PATH }}"
-            echo "Creating a sample Dockerfile for demonstration..."
-            mkdir -p ${{ env.FRONTEND_PATH }}
-            cat > ${{ env.FRONTEND_PATH }}/Dockerfile <<EOF
-          FROM nginx:alpine
-          COPY . /usr/share/nginx/html
-          EXPOSE 80
-          CMD ["nginx", "-g", "daemon off;"]
-          EOF
-          else
-            echo "✅ Frontend directory found"
+      # - name: Build or Validate Frontend Dockerfile
+      #   env:
+      #     NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+      #   run: |
+      #     # Check if frontend directory exists
+      #     if [ ! -d "${{ env.FRONTEND_PATH }}" ]; then
+      #       echo "⚠️ Frontend directory not found at ${{ env.FRONTEND_PATH }}"
             
-            # Check if Dockerfile exists, if not create a proper Next.js production Dockerfile
-            if [ ! -f "${{ env.FRONTEND_PATH }}/Dockerfile" ]; then
-              echo "📝 Creating production-ready Next.js Dockerfile..."
-              cat > ${{ env.FRONTEND_PATH }}/Dockerfile <<'EOF'
-          # Multi-stage build for Next.js application
-          FROM node:18-alpine AS deps
-          RUN apk add --no-cache libc6-compat
-          WORKDIR /app
-          COPY package*.json ./
-          RUN npm ci
+      #       mkdir -p ${{ env.FRONTEND_PATH }}
+      #       cat > ${{ env.FRONTEND_PATH }}/Dockerfile <<EOF
+
+      #     FROM nginx:alpine
+      #     COPY . /usr/share/nginx/html
+      #     EXPOSE 80
+      #     CMD ["nginx", "-g", "daemon off;"]
+      #     EOF
+      #     else
+      #       echo "✅ Frontend directory found"
+            
+      #       # Check if Dockerfile exists, if not create a proper Next.js production Dockerfile
+      #       if [ ! -f "${{ env.FRONTEND_PATH }}/Dockerfile" ]; then
+      #         echo "📝 Creating production-ready Next.js Dockerfile..."
+      #         cat > ${{ env.FRONTEND_PATH }}/Dockerfile <<'EOF'
+
+      #     # Multi-stage build for Next.js application
+      #     FROM node:18-alpine AS deps
+      #     RUN apk add --no-cache libc6-compat
+      #     WORKDIR /app
+      #     COPY package*.json ./
+      #     RUN npm ci
           
-            echo "Injecting NEXT_PUBLIC_API_URL: $NEXT_PUBLIC_API_URL"
-          FROM node:18-alpine AS builder
-          WORKDIR /app
-          COPY --from=deps /app/node_modules ./node_modules
-          COPY . .
+      #       echo "Injecting NEXT_PUBLIC_API_URL: $NEXT_PUBLIC_API_URL"
+      #     FROM node:18-alpine AS builder
+      #     WORKDIR /app
+
+      #     # Set environment variables for build
+
+      #     ENV NEXT_TELEMETRY_DISABLED=1
+      #     ENV NODE_ENV=production
+
+      #     COPY --from=deps /app/node_modules ./node_modules
+      #     COPY . .
           
-          # Set environment variables for build
-          ENV NEXT_TELEMETRY_DISABLED=1
-          ENV NODE_ENV=production
+      #     # Build the application
+      #     RUN npm run build
           
-          # Build the application
-          RUN npm run build
+      #     FROM node:18-alpine AS runner
+      #     WORKDIR /app
+
+      #     ENV NODE_ENV=production
+      #     ENV NEXT_TELEMETRY_DISABLED=1
           
-          FROM node:18-alpine AS runner
-          WORKDIR /app
-          ENV NODE_ENV=production
-          ENV NEXT_TELEMETRY_DISABLED=1
+      #     RUN addgroup --system --gid 1001 nodejs
+      #     RUN adduser --system --uid 1001 nextjs
           
-          RUN addgroup --system --gid 1001 nodejs
-          RUN adduser --system --uid 1001 nextjs
+      #     # Copy package files
+      #     COPY --from=builder /app/package.json ./package.json
           
-          # Copy package files
-          COPY --from=builder /app/package.json ./package.json
+      #     # Copy public assets (ensured to exist in builder)
+      #     COPY --from=builder /app/public ./public
           
-          # Copy public assets (ensured to exist in builder)
-          COPY --from=builder /app/public ./public
+      #     # Copy .next folder (includes all build output and config)
+      #     COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
           
-          # Copy .next folder (includes all build output and config)
-          COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
+      #     # Copy node_modules for runtime dependencies
+      #     COPY --from=builder /app/node_modules ./node_modules
           
-          # Copy node_modules for runtime dependencies
-          COPY --from=builder /app/node_modules ./node_modules
+      #     USER nextjs
+      #     EXPOSE 3000
+      #     ENV PORT=3000
+      #     ENV HOSTNAME=0.0.0.0
           
-          USER nextjs
-          EXPOSE 3000
-          ENV PORT=3000
-          ENV HOSTNAME=0.0.0.0
+      #     # Start Next.js in production mode
+      #     CMD ["npm", "start"]
+      #     EOF
+      #       else
+      #         echo "📝 Dockerfile exists, checking if it builds Next.js..."
+      #         # Check if Dockerfile includes build step
+      #         if ! grep -q "npm run build\|next build" "${{ env.FRONTEND_PATH }}/Dockerfile"; then
+      #           echo "⚠️ Existing Dockerfile may not build Next.js. Creating optimized version..."
+      #           mv "${{ env.FRONTEND_PATH }}/Dockerfile" "${{ env.FRONTEND_PATH }}/Dockerfile.original"
+      #           cat > ${{ env.FRONTEND_PATH }}/Dockerfile <<'EOF'
+
+      #     # Multi-stage build for Next.js application
+      #     FROM node:18-alpine AS deps
+      #     RUN apk add --no-cache libc6-compat
+      #     WORKDIR /app
+      #     COPY package*.json ./
+      #     RUN npm ci
           
-          # Start Next.js in production mode
-          CMD ["npm", "start"]
-          EOF
-            else
-              echo "📝 Dockerfile exists, checking if it builds Next.js..."
-              # Check if Dockerfile includes build step
-              if ! grep -q "npm run build\|next build" "${{ env.FRONTEND_PATH }}/Dockerfile"; then
-                echo "⚠️ Existing Dockerfile may not build Next.js. Creating optimized version..."
-                mv "${{ env.FRONTEND_PATH }}/Dockerfile" "${{ env.FRONTEND_PATH }}/Dockerfile.original"
-                cat > ${{ env.FRONTEND_PATH }}/Dockerfile <<'EOF'
-          # Multi-stage build for Next.js application
-          FROM node:18-alpine AS deps
-          RUN apk add --no-cache libc6-compat
-          WORKDIR /app
-          COPY package*.json ./
-          RUN npm ci
+      #     FROM node:18-alpine AS builder
+      #     WORKDIR /app
+      #     COPY --from=deps /app/node_modules ./node_modules
+      #     COPY . .
           
-          FROM node:18-alpine AS builder
-          WORKDIR /app
-          COPY --from=deps /app/node_modules ./node_modules
-          COPY . .
+      #     # Set environment variables for build
+      #     ARG NEXT_PUBLIC_API_URL
+      #     env:
+      #       NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+      #       NEXT_TELEMETRY_DISABLED: 1
+      #       NODE_ENV: production
+      #       PORT: 3000
+      #       HOSTNAME: 0.0.0.0
           
-          # Set environment variables for build
-          ENV NEXT_TELEMETRY_DISABLED=1
-          ENV NODE_ENV=production
+      #     # Ensure public directory exists (even if empty)
+      #     RUN mkdir -p public
           
-          # Ensure public directory exists (even if empty)
-          RUN mkdir -p public
+      #     # Build the application
+      #     RUN npm run build
           
-          # Build the application
-          RUN npm run build
+      #     FROM node:18-alpine AS runner
+      #     WORKDIR /app
           
-          FROM node:18-alpine AS runner
-          WORKDIR /app
-          ENV NODE_ENV=production
-          ENV NEXT_TELEMETRY_DISABLED=1
+      #     RUN addgroup --system --gid 1001 nodejs
+      #     RUN adduser --system --uid 1001 nextjs
           
-          RUN addgroup --system --gid 1001 nodejs
-          RUN adduser --system --uid 1001 nextjs
+      #     # Copy package files
+      #     COPY --from=builder /app/package.json ./package.json
           
-          # Copy package files
-          COPY --from=builder /app/package.json ./package.json
+      #     # Copy public assets (ensured to exist in builder)
+      #     COPY --from=builder /app/public ./public
           
-          # Copy public assets (ensured to exist in builder)
-          COPY --from=builder /app/public ./public
+      #     # Copy .next folder (includes all build output and config)
+      #     COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
           
-          # Copy .next folder (includes all build output and config)
-          COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
+      #     # Copy node_modules for runtime dependencies
+      #     COPY --from=builder /app/node_modules ./node_modules
           
-          # Copy node_modules for runtime dependencies
-          COPY --from=builder /app/node_modules ./node_modules
+      #     USER nextjs
+      #     EXPOSE 3000
           
-          USER nextjs
-          EXPOSE 3000
-          ENV PORT=3000
-          ENV HOSTNAME=0.0.0.0
           
-          # Start Next.js in production mode
-          CMD ["npm", "start"]
-          EOF
-              fi
-            fi
+      #     # Start Next.js in production mode
+      #     CMD ["npm", "start"]
+      #     EOF
+      #         fi
+      #       fi
+      #     fi
+          
+      - name: Validate NEXT_PUBLIC_API_URL in Dockerfile
+        run: |
+          echo "🔍 Validating NEXT_PUBLIC_API_URL in Dockerfile..."
+          env: 
+            NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+          
+          if [ -z "$NEXT_PUBLIC_API_URL" ]; then
+            echo "❌ NEXT_PUBLIC_API_URL secret is not set!"
+            exit 1
           fi
-          
+      
+
+      - name: Build Frontend Docker Image
+        run: |
           echo "🏗️ Building frontend Docker image..."
-          docker build -t ${{ steps.get-infra.outputs.acr-login-server }}/book-review-frontend:${{ github.event.inputs.frontend_image_tag }} \
+          docker build \
+            --build-arg NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }} \
+            -f ./docker/frontend.Dockerfile \
+            -t ${{ steps.get-infra.outputs.acr-login-server }}/book-review-frontend:${{ github.event.inputs.frontend_image_tag }} \
             ${{ env.FRONTEND_PATH }}
           
-          echo "📤 Pushing frontend image to ACR..."
-          docker push ${{ steps.get-infra.outputs.acr-login-server }}/book-review-frontend:${{ github.event.inputs.frontend_image_tag }}
           
+          echo "📤 Pushing frontend image to ACR..."
+          docker push \
+             ${{ steps.get-infra.outputs.acr-login-server }}/book-review-frontend:${{ github.event.inputs.frontend_image_tag }}
           echo "✅ Frontend image pushed successfully"
       
       - name: Verify Images in ACR
@@ -313,6 +342,7 @@ jobs:
           echo "📦 Verifying images in ACR..."
           az acr repository show-tags --name ${{ steps.get-infra.outputs.acr-name }} --repository book-review-backend
           az acr repository show-tags --name ${{ steps.get-infra.outputs.acr-name }} --repository book-review-frontend
+
   deploy-to-aks:
     name: Deploy to AKS
     runs-on: ubuntu-latest
@@ -328,56 +358,56 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
       
-      - name: Assign AKS Cluster Admin Role
-        run: |
-          echo "🔐 Ensuring service principal has AKS admin access..."
+      # - name: Assign AKS Cluster Admin Role
+      #   run: |
+      #     echo "🔐 Ensuring service principal has AKS admin access..."
           
-          # Get the service principal object ID
-          SP_OBJECT_ID=$(az ad sp show --id ${{ secrets.AZURE_CLIENT_ID }} --query id -o tsv)
+      #     # Get the service principal object ID
+      #     SP_OBJECT_ID=$(az ad sp show --id ${{ secrets.AZURE_CLIENT_ID }} --query id -o tsv)
           
-          # Get AKS resource ID
-          AKS_ID=$(az aks show \
-            --resource-group ${{ needs.build-and-push-images.outputs.resource-group }} \
-            --name ${{ needs.build-and-push-images.outputs.aks-cluster-name }} \
-            --query id -o tsv)
+      #     # Get AKS resource ID
+      #     AKS_ID=$(az aks show \
+      #       --resource-group ${{ needs.build-and-push-images.outputs.resource-group }} \
+      #       --name ${{ needs.build-and-push-images.outputs.aks-cluster-name }} \
+      #       --query id -o tsv)
           
-          # Assign Azure Kubernetes Service Cluster Admin Role
-          az role assignment create \
-            --assignee $SP_OBJECT_ID \
-            --role "Azure Kubernetes Service Cluster Admin Role" \
-            --scope $AKS_ID \
-            2>/dev/null || echo "Role assignment already exists or not needed"
+          # # Assign Azure Kubernetes Service Cluster Admin Role
+          # az role assignment create \
+          #   --assignee $SP_OBJECT_ID \
+          #   --role "Azure Kubernetes Service Cluster Admin Role" \
+          #   --scope $AKS_ID \
+          #   2>/dev/null || echo "Role assignment already exists or not needed"
           
-          echo "✅ Role assignment complete"
+          # echo "✅ Role assignment complete"
       
-      - name: Install kubelogin
-        run: |
-          echo "📦 Installing kubelogin for Azure AD authentication..."
+      # - name: Install kubelogin
+      #   run: |
+      #     echo "📦 Installing kubelogin for Azure AD authentication..."
           
-          # Download and install kubelogin using the correct URL format
-          KUBELOGIN_VERSION="v0.1.4"
+      #     # Download and install kubelogin using the correct URL format
+      #     KUBELOGIN_VERSION="v0.1.4"
           
-          # Download the zip file with error checking
-          echo "Downloading kubelogin ${KUBELOGIN_VERSION}..."
-          curl -fsSL "https://github.com/Azure/kubelogin/releases/download/${KUBELOGIN_VERSION}/kubelogin-linux-amd64.zip" -o kubelogin.zip
+      #     # Download the zip file with error checking
+      #     echo "Downloading kubelogin ${KUBELOGIN_VERSION}..."
+      #     curl -fsSL "https://github.com/Azure/kubelogin/releases/download/${KUBELOGIN_VERSION}/kubelogin-linux-amd64.zip" -o kubelogin.zip
           
-          # Verify the download
-          if [ ! -f kubelogin.zip ] || [ ! -s kubelogin.zip ]; then
-            echo "❌ Download failed or file is empty"
-            exit 1
-          fi
+      #     # Verify the download
+      #     if [ ! -f kubelogin.zip ] || [ ! -s kubelogin.zip ]; then
+      #       echo "❌ Download failed or file is empty"
+      #       exit 1
+      #     fi
           
-          # Unzip and install
-          unzip -o kubelogin.zip
-          sudo install -m 755 bin/linux_amd64/kubelogin /usr/local/bin/kubelogin
+      #     # Unzip and install
+      #     unzip -o kubelogin.zip
+      #     sudo install -m 755 bin/linux_amd64/kubelogin /usr/local/bin/kubelogin
           
-          # Clean up
-          rm -rf kubelogin.zip bin/
+      #     # Clean up
+      #     rm -rf kubelogin.zip bin/
           
-          # Verify installation
-          kubelogin --version
+      #     # Verify installation
+      #     kubelogin --version
           
-          echo "✅ kubelogin installed successfully"
+      #     echo "✅ kubelogin installed successfully"
       
       - name: Get AKS Credentials
         run: |
@@ -418,11 +448,11 @@ jobs:
           fi
           
           # Update backend deployment
-          sed -i "s|<ACR_NAME>\.azurecr\.io/book-review-backend:latest|${{ needs.build-and-push-images.outputs.backend-image }}|g" \
+          sed -i "s|image: .*book-review-backend:latest.*|image: $BACKEND_IMAGE|" \
             ${{ env.K8S_PATH }}/deployments/backend-deployment.yaml
           
           # Update frontend deployment  
-          sed -i "s|<ACR_NAME>\.azurecr\.io/book-review-frontend:latest|${{ needs.build-and-push-images.outputs.frontend-image }}|g" \
+          sed -i "s|image: .*book-review-frontend:latest.*|image: $FRONTEND_IMAGE|" \
             ${{ env.K8S_PATH }}/deployments/frontend-deployment.yaml
           
           # Update ConfigMap with MySQL FQDN - use explicit string
@@ -444,13 +474,17 @@ jobs:
             cat ${{ env.K8S_PATH }}/configmaps/app-config.yaml
             exit 1
           fi
-          
-          echo "✅ Kubernetes manifests updated successfully"
-      
+  
+
+           echo "✅ Kubernetes manifests updated successfully"
+
+          BACKEND_IMAGE="${{ needs.build-and-push-images.outputs.backend-image}}"
+          FRONTEND_IMAGE="${{ needs.build-and-push-images.outputs.frontend-image}}"
+
       - name: Create Kubernetes Namespace
         run: |
           kubectl create namespace book-review-${{ github.event.inputs.environment }} --dry-run=client -o yaml | kubectl apply -f -
-          kubectl config set-context --current --namespace=book-review-${{ github.event.inputs.environment }}
+          kubectl config set-context --current --namespace=${{ env.NAMESPACE }}
       
       - name: Create Kubernetes Secrets
         run: |
@@ -479,21 +513,24 @@ jobs:
       
       - name: Deploy Backend
         run: |
-          kubectl apply -f ${{ env.K8S_PATH }}/deployments/backend-deployment.yaml
-          kubectl apply -f ${{ env.K8S_PATH }}/services/backend-service.yaml
+           kubectl apply \
+           -f ${{ env.K8S_PATH }}/deployments/backend-deployment.yaml \
+           -f ${{ env.K8S_PATH }}/services/backend-service.yaml
+
+           # Force restart to pull latest image (in case tag hasn't changed)
+           echo "🔄 Forcing rollout restart to ensure latest image is used..." 
+           kubectl rollout restart deployment/book-review-backend -n ${{ env.NAMESPACE }}
+
+           
+           echo "⏳ Waiting for backend deployment to roll out..."
+           kubectl rollout status deployment/book-review-backend -n ${{ env.NAMESPACE }} --timeout=300s || echo "⚠️ Rollout timeout - check debug output"
           
-          # Force restart to pull latest image (in case tag hasn't changed)
-          echo "🔄 Forcing rollout restart to ensure latest image is used..."
-          kubectl rollout restart deployment/book-review-backend
+           echo ""
+           echo "📊 Current backend pod status:"
+           kubectl get pods -l component=backend -n ${{ env.NAMESPACE }}
+
+           echo "✅ Backend deployment applied"
           
-          echo "⏳ Waiting for backend deployment to roll out..."
-          kubectl rollout status deployment/book-review-backend --timeout=300s || echo "⚠️ Rollout timeout - check debug output"
-          
-          echo ""
-          echo "📊 Current backend pod status:"
-          kubectl get pods -l component=backend
-          
-          echo "✅ Backend deployment applied"
       
       - name: Debug Backend Deployment
         if: always()
@@ -537,21 +574,20 @@ jobs:
       
       - name: Deploy Frontend
         run: |
-          echo "Injecting NEXT_PUBLIC_API_URL: $NEXT_PUBLIC_API_URL"
-          # Optionally, print to verify (remove in production)
-          kubectl apply -f ${{ env.K8S_PATH }}/deployments/frontend-deployment.yaml
-          kubectl apply -f ${{ env.K8S_PATH }}/services/frontend-service.yaml
+          kubectl apply \
+          -f ${{ env.K8S_PATH }}/deployments/frontend-deployment.yaml \
+          -f ${{ env.K8S_PATH }}/services/frontend-service.yaml
           
           # Force restart to pull latest image (in case tag hasn't changed)
           echo "🔄 Forcing rollout restart to ensure latest image is used..."
-          kubectl rollout restart deployment/book-review-frontend
+          kubectl rollout restart deployment/book-review-frontend -n ${{ env.NAMESPACE }}
           
           echo "⏳ Waiting for frontend deployment to roll out..."
-          kubectl rollout status deployment/book-review-frontend --timeout=300s || echo "⚠️ Rollout timeout - check debug output"
+          kubectl rollout status deployment/book-review-frontend -n ${{ env.NAMESPACE }} --timeout=300s || echo "⚠️ Rollout timeout - check debug output"
           
           echo ""
           echo "📊 Current frontend pod status:"
-          kubectl get pods -l component=frontend
+          kubectl get pods -l component=frontend -n ${{ env.NAMESPACE }}
           
           echo "✅ Frontend deployment applied"
       
@@ -567,7 +603,7 @@ jobs:
           echo "⏳ Waiting for Ingress Controller to assign external IP..."
           
           for i in {1..30}; do
-            INGRESS_IP=$(kubectl get ingress book-review-ingress -n book-review-dev -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+            INGRESS_IP=$(kubectl get ingress book-review-ingress -n ${{ env.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
             
             if [ -n "$INGRESS_IP" ] && [ "$INGRESS_IP" != "null" ]; then
               echo "✅ Ingress External IP assigned: $INGRESS_IP"
@@ -588,31 +624,31 @@ jobs:
           
           echo ""
           echo "📋 Ingress Status:"
-          kubectl get ingress -n book-review-dev
-          kubectl describe ingress book-review-ingress -n book-review-dev
+          kubectl get ingress -n ${{ env.NAMESPACE }}
+          kubectl describe ingress book-review-ingress -n ${{ env.NAMESPACE }}
       
-      - name: Update CORS Origins with Ingress IP
-        if: steps.ingress-ip.outputs.ip_assigned == 'true'
-        run: |
-          INGRESS_IP="${{ steps.ingress-ip.outputs.ingress_ip }}"
+      # - name: Update CORS Origins with Ingress IP
+      #   if: steps.ingress-ip.outputs.ip_assigned == 'true'
+      #   run: |
+      #     INGRESS_IP="${{ steps.ingress-ip.outputs.ingress_ip }}"
           
-          echo "🔄 Updating ALLOWED_ORIGINS with Ingress IP: $INGRESS_IP"
+      #     echo "🔄 Updating ALLOWED_ORIGINS with Ingress IP: $INGRESS_IP"
           
-          # Get current ConfigMap
-          kubectl get configmap book-review-config -n book-review-dev -o yaml > /tmp/configmap.yaml
+      #     # Get current ConfigMap
+      #     kubectl get configmap book-review-config -n ${{ env.NAMESPACE }} -o yaml > /tmp/configmap.yaml
           
-          # Update allowed_origins to include Ingress IP
-          sed -i "s|allowed_origins: .*|allowed_origins: \"http://$INGRESS_IP,http://localhost:3000\"|g" /tmp/configmap.yaml
+      #     # Update allowed_origins to include Ingress IP
+      #     sed -i "s|allowed_origins: .*|allowed_origins: \"http://app.berryexcel.online,http://localhost:3000\"|g" /tmp/configmap.yaml
           
-          # Apply updated ConfigMap
-          kubectl apply -f /tmp/configmap.yaml
+      #     # Apply updated ConfigMap
+      #     kubectl apply -f /tmp/configmap.yaml
           
-          echo "✅ ALLOWED_ORIGINS updated to include http://$INGRESS_IP"
+      #     echo "✅ ALLOWED_ORIGINS updated to include http://$INGRESS_IP"
           
-          # Restart backend to pick up new config
-          kubectl rollout restart deployment/book-review-backend -n book-review-dev
+      #     # Restart backend to pick up new config
+      #     kubectl rollout restart deployment/book-review-backend -n ${{ env.NAMESPACE }}
           
-          echo "🔄 Backend restarted to apply new CORS configuration"
+      #     echo "🔄 Backend restarted to apply new CORS configuration"
       
       - name: Debug Frontend Issues
         if: always()
@@ -646,8 +682,8 @@ jobs:
           
           # Test frontend through Ingress
           echo "Testing frontend access..."
-          if kubectl run test-frontend-health --rm -i --restart=Never --image=curlimages/curl -n book-review-dev -- \
-            curl -s -o /dev/null -w "%{http_code}" http://ingress-nginx-controller.ingress-nginx.svc.cluster.local/ | grep -q "200"; then
+          if kubectl run test-frontend-health --rm -i --restart=Never --image=curlimages/curl -n ${{ env.NAMESPACE }} -- \
+            curl -I http://$INGRESS_IP | grep -q "200"; then
             echo "✅ Frontend is healthy"
           else
             echo "⚠️ Frontend health check inconclusive"
@@ -655,8 +691,8 @@ jobs:
           
           # Test backend API through Ingress
           echo "Testing backend API access..."
-          if kubectl run test-backend-health --rm -i --restart=Never --image=curlimages/curl -n book-review-dev -- \
-            curl -s http://ingress-nginx-controller.ingress-nginx.svc.cluster.local/api/books | grep -q "title"; then
+          if kubectl run test-backend-health --rm -i --restart=Never --image=curlimages/curl -n ${{ env.NAMESPACE }} -- \
+            curl -I http://$INGRESS_IP/api | grep -q "200"; then
             echo "✅ Backend API is healthy"
           else
             echo "⚠️ Backend API health check inconclusive"
@@ -664,8 +700,8 @@ jobs:
           
           echo ""
           echo "✅ Application deployed successfully!"
-          echo "🌐 Application URL: http://$INGRESS_IP"
-          echo "🔗 Backend API: http://$INGRESS_IP/api"
+          echo "🌐 Application URL: http://app.berryexcel.online"
+          echo "🔗 Backend API: http://app.berryexcel.online/api"
       
       - name: Deployment Summary
         run: |
@@ -693,27 +729,27 @@ jobs:
           
           | Property | Value |
           |----------|-------|
-          | **Environment** | \`${{ github.event.inputs.environment }}\` |
+          | **Environment** | \${{ github.event.inputs.environment }}\ |
           | **Deployment Time** | $DEPLOY_TIME |
           | **Deployed By** | @${{ github.actor }} |
           | **Workflow Run** | [\#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
-          | **Git Commit** | [\`${GITHUB_SHA:0:7}\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}) |
+          | **Git Commit** | [\${GITHUB_SHA:0:7}\](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}) |
           
           ---
           
           ## 🌐 Application Access
           
           ### Primary Access
-          - **🌍 Frontend Application**: http://$INGRESS_IP
-          - **🔌 Backend API**: http://$INGRESS_IP/api
-          - **📚 API Documentation**: http://$INGRESS_IP/api/docs *(if available)*
+          - **🌍 Frontend Application**: http://app.berryexcel.online
+          - **🔌 Backend API**: http://app.berryexcel.online/api
+          - **📚 API Documentation**: http://app.berryexcel.online/api/docs *(if available)*
           
           ### Alternative Access (Port-Forward)
           If external IP is not accessible:
-          \`\`\`bash
+          \\\bash
           kubectl port-forward -n ingress-nginx svc/ingress-nginx-controller 8080:80
           # Then access: http://localhost:8080
-          \`\`\`
+          \\\
           
           ---
           
@@ -722,27 +758,27 @@ jobs:
           | Component | Value |
           |-----------|-------|
           | **Azure Region** | Australia Central |
-          | **Resource Group** | \`$RESOURCE_GROUP\` |
-          | **AKS Cluster** | \`$AKS_CLUSTER\` |
-          | **Namespace** | \`$NAMESPACE\` |
+          | **Resource Group** | \$RESOURCE_GROUP\ |
+          | **AKS Cluster** | \$AKS_CLUSTER\ |
+          | **Namespace** | \$NAMESPACE\ |
           | **Ingress Controller** | NGINX Ingress v1.8.2 |
-          | **Ingress IP** | \`$INGRESS_IP\` |
-          | **Container Registry** | \`$ACR_SERVER\` |
-          | **MySQL Server** | \`$MYSQL_FQDN\` |
+          | **Ingress IP** | \$INGRESS_IP\ |
+          | **Container Registry** | \$ACR_SERVER\ |
+          | **MySQL Server** | \$MYSQL_FQDN\ |
           
           ---
           
           ## 📦 Deployed Container Images
           
           ### Backend Service
-          \`\`\`
+          \\\
           ${{ needs.build-and-push-images.outputs.backend-image }}
-          \`\`\`
+          \\\
           
           ### Frontend Service
-          \`\`\`
+          \\\
           ${{ needs.build-and-push-images.outputs.frontend-image }}
-          \`\`\`
+          \\\
           
           ---
           
@@ -751,36 +787,36 @@ jobs:
           **Total Pods**: $POD_COUNT | **Running**: $RUNNING_PODS
           
           ### 🟢 Pods
-          \`\`\`
+          \\\
           $(kubectl get pods -n $NAMESPACE -o wide)
-          \`\`\`
+          \\\
           
           ### 🔌 Services
-          \`\`\`
+          \\\
           $(kubectl get svc -n $NAMESPACE -o wide)
-          \`\`\`
+          \\\
           
           ### 🌐 Ingress
-          \`\`\`
+          \\\
           $(kubectl get ingress -n $NAMESPACE -o wide)
-          \`\`\`
+          \\\
           
           ### ⚙️ ConfigMaps
-          \`\`\`
+          \\\
           $(kubectl get configmap -n $NAMESPACE | grep book-review)
-          \`\`\`
+          \\\
           
           ### 🔐 Secrets
-          \`\`\`
+          \\\
           $(kubectl get secrets -n $NAMESPACE | grep book-review)
-          \`\`\`
+          \\\
           
           ---
           
           ## 🔧 Management Commands
           
           ### Access Cluster
-          \`\`\`bash
+          \\\bash
           # Get AKS credentials
           az aks get-credentials \\
             --resource-group $RESOURCE_GROUP \\
@@ -789,10 +825,10 @@ jobs:
           
           # Set default namespace
           kubectl config set-context --current --namespace=$NAMESPACE
-          \`\`\`
+          \\\
           
           ### View Logs
-          \`\`\`bash
+          \\\bash
           # Frontend logs
           kubectl logs -n $NAMESPACE -l component=frontend --tail=100 -f
           
@@ -801,10 +837,10 @@ jobs:
           
           # Ingress Controller logs
           kubectl logs -n ingress-nginx -l app.kubernetes.io/component=controller --tail=100 -f
-          \`\`\`
+          \\\
           
           ### Debug Commands
-          \`\`\`bash
+          \\\bash
           # Check pod status
           kubectl get pods -n $NAMESPACE -o wide
           
@@ -822,10 +858,10 @@ jobs:
           
           # Test internal connectivity
           kubectl run test-curl --rm -i --restart=Never --image=curlimages/curl -n $NAMESPACE -- curl -v http://book-review-frontend:3000
-          \`\`\`
+          \\\
           
           ### Restart Deployments
-          \`\`\`bash
+          \\\bash
           # Restart backend
           kubectl rollout restart deployment/book-review-backend -n $NAMESPACE
           
@@ -835,23 +871,23 @@ jobs:
           # Check rollout status
           kubectl rollout status deployment/book-review-backend -n $NAMESPACE
           kubectl rollout status deployment/book-review-frontend -n $NAMESPACE
-          \`\`\`
+          \\\
           
           ### Scale Resources
-          \`\`\`bash
+          \\\bash
           # Scale backend replicas
           kubectl scale deployment/book-review-backend -n $NAMESPACE --replicas=3
           
           # Scale frontend replicas
           kubectl scale deployment/book-review-frontend -n $NAMESPACE --replicas=3
-          \`\`\`
+          \\\
           
           ---
           
           ## 🔍 Monitoring & Troubleshooting
           
           ### Health Checks
-          \`\`\`bash
+          \\\bash
           # Test frontend health
           curl -I http://$INGRESS_IP/
           
@@ -861,25 +897,25 @@ jobs:
           # Test from within cluster
           kubectl run test-health --rm -i --restart=Never --image=curlimages/curl -n $NAMESPACE -- \\
             curl -v http://ingress-nginx-controller.ingress-nginx.svc.cluster.local/
-          \`\`\`
+          \\\
           
           ### View Events
-          \`\`\`bash
+          \\\bash
           # Recent events in namespace
           kubectl get events -n $NAMESPACE --sort-by='.lastTimestamp' | tail -20
           
           # Watch events in real-time
           kubectl get events -n $NAMESPACE --watch
-          \`\`\`
+          \\\
           
           ### Resource Usage
-          \`\`\`bash
+          \\\bash
           # Pod resource usage
           kubectl top pods -n $NAMESPACE
           
           # Node resource usage
           kubectl top nodes
-          \`\`\`
+          \\\
           
           ---
           
@@ -888,7 +924,7 @@ jobs:
           ### Issue: External IP Timeout
           **Symptom**: Cannot access http://$INGRESS_IP from browser  
           **Solution**: Check NSG rules in Azure Portal for node resource group (MC_*)
-          \`\`\`bash
+          \\\bash
           # Add NSG rule via Azure CLI
           az network nsg rule create \\
             --resource-group MC_${RESOURCE_GROUP}_${AKS_CLUSTER}_australiacentral \\
@@ -899,26 +935,26 @@ jobs:
             --destination-port-ranges 80 443 30000-32767 \\
             --access Allow \\
             --protocol Tcp
-          \`\`\`
+          \\\
           
           ### Issue: Pods Not Starting
           **Symptom**: Pods stuck in Pending or CrashLoopBackOff  
           **Solution**: Check pod events and logs
-          \`\`\`bash
+          \\\bash
           kubectl describe pod <POD_NAME> -n $NAMESPACE
           kubectl logs <POD_NAME> -n $NAMESPACE --previous
-          \`\`\`
+          \\\
           
           ### Issue: Database Connection Errors
           **Symptom**: Backend logs show MySQL connection errors  
           **Solution**: Verify ConfigMap has correct MySQL FQDN and secrets are set
-          \`\`\`bash
+          \\\bash
           # Check ConfigMap
           kubectl get configmap book-review-config -n $NAMESPACE -o yaml | grep database_host
           
           # Verify secrets exist
           kubectl get secret book-review-secrets -n $NAMESPACE
-          \`\`\`
+          \\\
           
           ---
           
@@ -927,7 +963,7 @@ jobs:
           - **Azure Portal**: [Resource Group](${{ github.server_url }}/${{ github.repository }})
           - **GitHub Repository**: [${{ github.repository }}](${{ github.server_url }}/${{ github.repository }})
           - **Workflow Runs**: [Actions](${{ github.server_url }}/${{ github.repository }}/actions)
-          - **Kubernetes Dashboard**: Deploy with \`kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml\`
+          - **Kubernetes Dashboard**: Deploy with \kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml\
           
           ---
           

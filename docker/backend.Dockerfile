@@ -1,7 +1,23 @@
 FROM node:18-alpine
+
+# Create non-root user
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
 WORKDIR /app
-COPY backend/package*.json ./
+
+# Copy package files first (layer caching)
+COPY package*.json ./
+
 RUN npm ci --omit=dev
-COPY backend .
-EXPOSE 8080
+
+# Copy application source
+COPY . .
+
+# Change ownership
+RUN chown -R appuser:appgroup /app
+
+USER appuser
+
+EXPOSE 3001
+
 CMD ["npm", "start"]

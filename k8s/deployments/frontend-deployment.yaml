@@ -20,51 +20,52 @@ spec:
     spec:
       terminationGracePeriodSeconds: 30
       containers:
-      - name: frontend
-        image: cloudprojdevacr01b0dd.azurecr.io/book-review-frontend:latest
-        imagePullPolicy: Always
-        ports:
-        - containerPort: 3000
-          name: http
+        - name: frontend
+          image: cloudprojdevacr01b0dd.azurecr.io/book-review-frontend:latest
+          imagePullPolicy: Always
 
-        env:
-        - name: NODE_ENV
-          value: "production"
-        - name: NEXT_PUBLIC_API_URL
-          value: "http://book-review-backend.book-review-dev.svc.cluster.local:3001"
-        - name: PORT
-          value: "3000"
+          ports:
+            - containerPort: 3000
+              name: http
 
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "200m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
+          env:
+            - name: NODE_ENV
+              value: "production"
 
-        startupProbe:
-          httpGet:
-            path: /
-            port: 3000
-          failureThreshold: 30
-          periodSeconds: 10
+            # 👇 MUST be ingress-based (browser-safe)
+            - name: NEXT_PUBLIC_API_URL
+              value: "/api"
 
-        readinessProbe:
-          httpGet:
-            path: /
-            port: 3000
-          initialDelaySeconds: 10
-          periodSeconds: 10
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
 
-        livenessProbe:
-          httpGet:
-            path: /
-            port: 3000
-          initialDelaySeconds: 30
-          periodSeconds: 20
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            failureThreshold: 30
+            periodSeconds: 10
 
-        lifecycle:
-          preStop:
-            exec:
-              command: ["sh", "-c", "sleep 10"]
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 20
+
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 10"]
