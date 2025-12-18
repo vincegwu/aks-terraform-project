@@ -21,7 +21,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: backend
-          image: <ACR_LOGIN_SERVER>/book-review-backend:latest
+          image: cloudprojdevacr01b0dd.azurecr.io/book-review-backend:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 3001
@@ -80,14 +80,14 @@ spec:
 
           startupProbe:
             httpGet:
-              path: /health
+              path: /
               port: 3001
             failureThreshold: 30
             periodSeconds: 10
 
           readinessProbe:
             httpGet:
-              path: /health
+              path: /
               port: 3001
             initialDelaySeconds: 60
             periodSeconds: 10
@@ -97,7 +97,7 @@ spec:
 
           livenessProbe:
             httpGet:
-              path: /health
+              path: /
               port: 3001
             initialDelaySeconds: 30
             periodSeconds: 20
