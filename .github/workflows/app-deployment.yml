@@ -448,12 +448,13 @@ jobs:
             exit 1
           fi
           
-          # Update backend deployment
-          sed -i "s|image: .*book-review-backend:latest.*|image: $BACKEND_IMAGE|" \
+
+          # Update backend deployment image tag
+          sed -i "s|image: cloudprojdevacr01b0dd.azurecr.io/book-review-backend:__IMAGE_TAG__|image: $BACKEND_IMAGE|g" \
             ${{ env.K8S_PATH }}/deployments/backend-deployment.yaml
-          
-          # Update frontend deployment  
-          sed -i "s|image: .*book-review-frontend:latest.*|image: $FRONTEND_IMAGE|" \
+
+          # Update frontend deployment image tag
+          sed -i "s|image: cloudprojdevacr01b0dd.azurecr.io/book-review-frontend:__IMAGE_TAG__|image: $FRONTEND_IMAGE|g" \
             ${{ env.K8S_PATH }}/deployments/frontend-deployment.yaml
           
           # Update ConfigMap with MySQL FQDN - use explicit string

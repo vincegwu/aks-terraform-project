@@ -22,7 +22,7 @@ spec:
 
       containers:
         - name: backend
-          image: cloudprojdevacr01b0dd.azurecr.io/book-review-backend:${{IMAGE_TAG}}
+          image: cloudprojdevacr01b0dd.azurecr.io/book-review-backend:__IMAGE_TAG__
           imagePullPolicy: IfNotPresent
 
           ports:

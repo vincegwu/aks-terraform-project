@@ -21,7 +21,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: frontend
-          image: cloudprojdevacr01b0dd.azurecr.io/book-review-frontend:${{IMAGE_TAG}}
+          image: cloudprojdevacr01b0dd.azurecr.io/book-review-frontend:__IMAGE_TAG__
           imagePullPolicy: IfNotPresent
 
           ports:
@@ -44,21 +44,21 @@ spec:
 
           startupProbe:
             httpGet:
-              path: /api/health
+              path: /
               port: 3000
             failureThreshold: 30
             periodSeconds: 10
 
           readinessProbe:
             httpGet:
-              path: /api/health
+              path: /
               port: 3000
             initialDelaySeconds: 10
             periodSeconds: 10
 
           livenessProbe:
             httpGet:
-              path: /api/health
+              path: /
               port: 3000
             initialDelaySeconds: 30
             periodSeconds: 20
