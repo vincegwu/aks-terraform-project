@@ -11,7 +11,6 @@ spec:
   rules:
   - http:
       paths:
-
       # 🔹 Backend API
       - path: /api(/|$)(.*)
         pathType: ImplementationSpecific

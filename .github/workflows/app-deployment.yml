@@ -1,9 +1,5 @@
 name: Application Deployment
 
-# Workflow Chain: Infrastructure Deploy → Application Deploy (auto) → Manual Destroy
-# This workflow is automatically triggered by Infrastructure Deployment on success
-# Can also be manually triggered for redeployment or updates
-
 on:
   workflow_dispatch:
     inputs:
@@ -16,36 +12,34 @@ on:
           - stage
           - prod
       frontend_image_tag:
-        description: 'Frontend Image Tag'
+        description: 'Frontend Docker image tag'
         required: false
         default: 'latest'
       backend_image_tag:
-        description: 'Backend Image Tag'
+        description: 'Backend Docker image tag'
         required: false
         default: 'latest'
-      run_id:
-        description: 'Infrastructure workflow run ID (auto-filled)'
-        required: false
-        type: string
       app_repository:
-        description: 'Application GitHub Repository (e.g., owner/repo)'
+        description: 'Remote GitHub repo for app (owner/repo)'
         required: false
         default: 'pravinmishraaws/book-review-app'
-        type: string
       app_branch:
-        description: 'Application Repository Branch'
+        description: 'Branch of the app repository'
         required: false
         default: 'main'
-        type: string
+      run_id:
+        description: 'Infra workflow run ID (for fetching Terraform state)'
+        required: false
 
 env:
-  FRONTEND_PATH: './book-review-app/frontend'
-  BACKEND_PATH: './book-review-app/backend'
+  FRONTEND_PATH: './frontend'   # root folder Dockerfile
+  BACKEND_PATH: './backend'     # root folder Dockerfile
   K8S_PATH: './k8s'
 
 jobs:
+
   build-and-push-images:
-    name: Build and Push Container Images
+    name: Build & Push Docker Images
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment }}
     outputs:
@@ -55,11 +49,12 @@ jobs:
       mysql-fqdn: ${{ steps.get-infra.outputs.mysql-fqdn }}
       frontend-image: ${{ steps.get-infra.outputs.acr-login-server }}/book-review-frontend:${{ github.event.inputs.frontend_image_tag }}
       backend-image: ${{ steps.get-infra.outputs.acr-login-server }}/book-review-backend:${{ github.event.inputs.backend_image_tag }}
-    
+
     steps:
-      - name: Checkout code
+
+      - name: Checkout Infra Repository
         uses: actions/checkout@v4
-      
+
       - name: Download Terraform State
         uses: actions/download-artifact@v4
         with:
@@ -67,600 +62,110 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ github.event.inputs.run_id }}
           repository: ${{ github.repository }}
-      
-      - name: Fetch Application Code from Repository
+
+      - name: Fetch Remote Application Repo
         run: |
-          APP_REPO="${{ github.event.inputs.app_repository || 'pravinmishraaws/book-review-app' }}"
-          APP_BRANCH="${{ github.event.inputs.app_branch || 'main' }}"
-          
-          echo "📥 Fetching application code from repository..."
-          echo "Repository: $APP_REPO"
-          echo "Branch: $APP_BRANCH"
-          
-          # Clone the application repository
-          git clone --branch $APP_BRANCH --depth 1 \
-            https://github.com/$APP_REPO.git book-review-app
-          
-          echo "✅ Application code fetched successfully"
-          echo "📁 Directory structure:"
-          ls -la book-review-app/
-      
-      - name: Verify Application Structure
-        run: |
-          echo "🔍 Verifying application structure..."
-          
-          if [ -d "${{ env.BACKEND_PATH }}" ]; then
-            echo "✅ Backend directory found"
-            ls -la ${{ env.BACKEND_PATH }}/
-          else
-            echo "⚠️ Backend directory not found at ${{ env.BACKEND_PATH }}"
-          fi
-          
-          if [ -d "${{ env.FRONTEND_PATH }}" ]; then
-            echo "✅ Frontend directory found"
-            ls -la ${{ env.FRONTEND_PATH }}/
-          else
-            echo "⚠️ Frontend directory not found at ${{ env.FRONTEND_PATH }}"
-          fi
-      
-      - name: Extract Infrastructure Details from Terraform
+          APP_REPO="${{ github.event.inputs.app_repository }}"
+          APP_BRANCH="${{ github.event.inputs.app_branch }}"
+          git clone --branch $APP_BRANCH --depth 1 https://github.com/$APP_REPO.git .
+          echo "✅ App repo fetched"
+
+      - name: Extract Terraform Outputs
         id: get-infra
         run: |
-          echo "📋 Extracting infrastructure details from Terraform outputs..."
-          
-          # Parse terraform outputs JSON
           ACR_NAME=$(jq -r '.acr_name.value' terraform-outputs.json)
           ACR_LOGIN_SERVER=$(jq -r '.acr_login_server.value' terraform-outputs.json)
           AKS_CLUSTER_NAME=$(jq -r '.aks_cluster_name.value' terraform-outputs.json)
           RESOURCE_GROUP=$(jq -r '.resource_group_name.value' terraform-outputs.json)
           MYSQL_FQDN=$(jq -r '.mysql_fqdn.value' terraform-outputs.json)
           
-          # Validate extracted values
-          if [ -z "$ACR_NAME" ] || [ "$ACR_NAME" == "null" ]; then
-            echo "❌ Error: ACR name not found in Terraform outputs"
-            exit 1
-          fi
-          
-          # Export to outputs
           echo "acr-name=$ACR_NAME" >> $GITHUB_OUTPUT
           echo "acr-login-server=$ACR_LOGIN_SERVER" >> $GITHUB_OUTPUT
           echo "aks-cluster-name=$AKS_CLUSTER_NAME" >> $GITHUB_OUTPUT
           echo "resource-group=$RESOURCE_GROUP" >> $GITHUB_OUTPUT
           echo "mysql-fqdn=$MYSQL_FQDN" >> $GITHUB_OUTPUT
-          
-          echo "✅ Infrastructure Details:"
-          echo "  ACR: $ACR_NAME ($ACR_LOGIN_SERVER)"
-          echo "  AKS: $AKS_CLUSTER_NAME"
-          echo "  RG: $RESOURCE_GROUP"
-          echo "  MySQL: $MYSQL_FQDN"
-      
-      - name: Azure Login
+
+      - name: Azure Login (OIDC + Service Principal)
         uses: azure/login@v1
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
-      - name: ACR Login
-        run: |
-          az acr login --name ${{ steps.get-infra.outputs.acr-name }}
-      
-      - name: Build and Push Backend Image
-        run: |
-          # Check if backend directory exists
-          if [ ! -d "${{ env.BACKEND_PATH }}" ]; then
-            echo "⚠️ Backend directory not found at ${{ env.BACKEND_PATH }}"
-            echo "Creating a sample Dockerfile for demonstration..."
-            mkdir -p ${{ env.BACKEND_PATH }}
-            cat > ${{ env.BACKEND_PATH }}/Dockerfile <<EOF
-          FROM node:18-alpine
-          WORKDIR /app
-          COPY package*.json ./
-          RUN npm ci --only=production || true
-          COPY . .
-          EXPOSE 8080
-          CMD ["npm", "start"]
-          EOF
-          fi
-          
-          docker build -t ${{ steps.get-infra.outputs.acr-login-server }}/book-review-backend:${{ github.event.inputs.backend_image_tag }} \
-            ${{ env.BACKEND_PATH }}
-          
-          docker push ${{ steps.get-infra.outputs.acr-login-server }}/book-review-backend:${{ github.event.inputs.backend_image_tag }}
-          
-          echo "✅ Backend image pushed successfully"
-      
-      - name: Build and Push Frontend Image
-        env:
-          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
-        run: |
-          # Check if frontend directory exists
-          if [ ! -d "${{ env.FRONTEND_PATH }}" ]; then
-            echo "⚠️ Frontend directory not found at ${{ env.FRONTEND_PATH }}"
-            echo "Creating a sample Dockerfile for demonstration..."
-            mkdir -p ${{ env.FRONTEND_PATH }}
-            cat > ${{ env.FRONTEND_PATH }}/Dockerfile <<EOF
-          FROM nginx:alpine
-          COPY . /usr/share/nginx/html
-          EXPOSE 80
-          CMD ["nginx", "-g", "daemon off;"]
-          EOF
-          else
-            echo "✅ Frontend directory found"
-            
-            # Check if Dockerfile exists, if not create a proper Next.js production Dockerfile
-            if [ ! -f "${{ env.FRONTEND_PATH }}/Dockerfile" ]; then
-              echo "📝 Creating production-ready Next.js Dockerfile..."
-              cat > ${{ env.FRONTEND_PATH }}/Dockerfile <<'EOF'
-          # Multi-stage build for Next.js application
-          FROM node:18-alpine AS deps
-          RUN apk add --no-cache libc6-compat
-          WORKDIR /app
-          COPY package*.json ./
-          RUN npm ci
-          
-            echo "Injecting NEXT_PUBLIC_API_URL: $NEXT_PUBLIC_API_URL"
-          FROM node:18-alpine AS builder
-          WORKDIR /app
-          COPY --from=deps /app/node_modules ./node_modules
-          COPY . .
-          
-          # Set environment variables for build
-          ARG NEXT_PUBLIC_API_URL
-          ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-          ENV NEXT_TELEMETRY_DISABLED=1
-          ENV NODE_ENV=production
-          
-          # Build the application
-          RUN npm run build
-          
-          FROM node:18-alpine AS runner
-          WORKDIR /app
-          ENV NODE_ENV=production
-          ENV NEXT_TELEMETRY_DISABLED=1
-          
-          RUN addgroup --system --gid 1001 nodejs
-          RUN adduser --system --uid 1001 nextjs
-          
-          # Copy package files
-          COPY --from=builder /app/package.json ./package.json
-          
-          # Copy public assets (ensured to exist in builder)
-          COPY --from=builder /app/public ./public
-          
-          # Copy .next folder (includes all build output and config)
-          COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
-          
-          # Copy node_modules for runtime dependencies
-          COPY --from=builder /app/node_modules ./node_modules
-          
-          USER nextjs
-          EXPOSE 3000
-          ENV PORT=3000
-          ENV HOSTNAME=0.0.0.0
-          
-          # Start Next.js in production mode
-          CMD ["npm", "start"]
-          EOF
-            else
-              echo "📝 Dockerfile exists, checking if it builds Next.js..."
-              # Check if Dockerfile includes build step
-              if ! grep -q "npm run build\|next build" "${{ env.FRONTEND_PATH }}/Dockerfile"; then
-                echo "⚠️ Existing Dockerfile may not build Next.js. Creating optimized version..."
-                mv "${{ env.FRONTEND_PATH }}/Dockerfile" "${{ env.FRONTEND_PATH }}/Dockerfile.original"
-                cat > ${{ env.FRONTEND_PATH }}/Dockerfile <<'EOF'
-          # Multi-stage build for Next.js application
-          FROM node:18-alpine AS deps
-          RUN apk add --no-cache libc6-compat
-          WORKDIR /app
-          COPY package*.json ./
-          RUN npm ci
-          
-          FROM node:18-alpine AS builder
-          WORKDIR /app
-          COPY --from=deps /app/node_modules ./node_modules
-          COPY . .
-          
-          # Set environment variables for build
-          ENV NEXT_TELEMETRY_DISABLED=1
-          ENV NODE_ENV=production
-          
-          # Ensure public directory exists (even if empty)
-          RUN mkdir -p public
-          
-          # Build the application
-          ARG NEXT_PUBLIC_API_URL
-          ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-          RUN npm run build
-          
-          FROM node:18-alpine AS runner
-          WORKDIR /app
-          ENV NODE_ENV=production
-          ENV NEXT_TELEMETRY_DISABLED=1
-          
-          RUN addgroup --system --gid 1001 nodejs
-          RUN adduser --system --uid 1001 nextjs
-          
-          # Copy package files
-          COPY --from=builder /app/package.json ./package.json
-          
-          # Copy public assets (ensured to exist in builder)
-          COPY --from=builder /app/public ./public
-          
-          # Copy .next folder (includes all build output and config)
-          COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
-          
-          # Copy node_modules for runtime dependencies
-          COPY --from=builder /app/node_modules ./node_modules
-          
-          USER nextjs
-          EXPOSE 3000
-          ENV PORT=3000
-          ENV HOSTNAME=0.0.0.0
-          
-          # Start Next.js in production mode
-          CMD ["npm", "start"]
-          EOF
-              fi
-            fi
-          fi
-          
-          echo "🏗️ Building frontend Docker image..."
-          docker build \
-           --build-arg NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }} \
-           -t ${{ steps.get-infra.outputs.acr-login-server }}/book-review-frontend:${{ github.event.inputs.frontend_image_tag }} \
-           -f ${{ env.FRONTEND_PATH }}/Dockerfile .
-          
-          echo "📤 Pushing frontend image to ACR..."
-          docker push ${{ steps.get-infra.outputs.acr-login-server }}/book-review-frontend:${{ github.event.inputs.frontend_image_tag }}
-          
-          echo "✅ Frontend image pushed successfully"
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          allow-no-subscriptions: true
 
-      - name: Verify Images in ACR
+      - name: Login to ACR
+        run: az acr login --name ${{ steps.get-infra.outputs.acr-name }}
+
+      - name: Build & Push Backend Image
         run: |
-          echo "📦 Verifying images in ACR..."
-          az acr repository show-tags --name ${{ steps.get-infra.outputs.acr-name }} --repository book-review-backend
-          az acr repository show-tags --name ${{ steps.get-infra.outputs.acr-name }} --repository book-review-frontend
+          docker build -t ${{ steps.get-infra.outputs.acr-login-server }}/book-review-backend:${{ github.event.inputs.backend_image_tag }} \
+            -f ./docker/backend.Dockerfile .
+          docker push ${{ steps.get-infra.outputs.acr-login-server }}/book-review-backend:${{ github.event.inputs.backend_image_tag }}
+
+      - name: Build & Push Frontend Image
+        run: |
+          docker build -t ${{ steps.get-infra.outputs.acr-login-server }}/book-review-frontend:${{ github.event.inputs.frontend_image_tag }} \
+            -f ./docker/frontend.Dockerfile .
+          docker push ${{ steps.get-infra.outputs.acr-login-server }}/book-review-frontend:${{ github.event.inputs.frontend_image_tag }}
 
   deploy-to-aks:
     name: Deploy to AKS
     runs-on: ubuntu-latest
     needs: build-and-push-images
     environment: ${{ github.event.inputs.environment }}
-    
     steps:
-      - name: Checkout code
+
+      - name: Checkout Infra Repo
         uses: actions/checkout@v4
-      
+
       - name: Azure Login
         uses: azure/login@v1
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-      
-      - name: Assign AKS Cluster Admin Role
-        run: |
-          echo "🔐 Ensuring service principal has AKS admin access..."
-          
-          # Get the service principal object ID
-          SP_OBJECT_ID=$(az ad sp show --id ${{ secrets.AZURE_CLIENT_ID }} --query id -o tsv)
-          
-          # Get AKS resource ID
-          AKS_ID=$(az aks show \
-            --resource-group ${{ needs.build-and-push-images.outputs.resource-group }} \
-            --name ${{ needs.build-and-push-images.outputs.aks-cluster-name }} \
-            --query id -o tsv)
-          
-          # Assign Azure Kubernetes Service Cluster Admin Role
-          az role assignment create \
-            --assignee $SP_OBJECT_ID \
-            --role "Azure Kubernetes Service Cluster Admin Role" \
-            --scope $AKS_ID \
-            2>/dev/null || echo "Role assignment already exists or not needed"
-          
-          echo "✅ Role assignment complete"
-    
-      
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
       - name: Get AKS Credentials
         run: |
-          echo "✅ Using infrastructure details from Terraform:"
-          echo "  AKS: ${{ needs.build-and-push-images.outputs.aks-cluster-name }}"
-          echo "  Resource Group: ${{ needs.build-and-push-images.outputs.resource-group }}"
-          
-          # Get AKS credentials with admin access (uses cluster certificates)
-          # This bypasses Azure RBAC and works with service principal authentication
           az aks get-credentials \
             --resource-group ${{ needs.build-and-push-images.outputs.resource-group }} \
             --name ${{ needs.build-and-push-images.outputs.aks-cluster-name }} \
-            --admin \
-            --overwrite-existing
-          
-          echo "✅ AKS credentials configured successfully with admin access"
-      
-      - name: Set MySQL FQDN
-        id: get-mysql
-        run: |
-          MYSQL_FQDN="${{ needs.build-and-push-images.outputs.mysql-fqdn }}"
-          echo "mysql-fqdn=$MYSQL_FQDN" >> $GITHUB_OUTPUT
-          echo "✅ MySQL FQDN from Terraform: $MYSQL_FQDN"
-      
+            --admin --overwrite-existing
+
       - name: Update Kubernetes Manifests
         run: |
-          # Extract ACR name from login server
-          ACR_NAME=$(echo "${{ needs.build-and-push-images.outputs.acr-login-server }}" | cut -d'.' -f1)
-          MYSQL_FQDN="${{ steps.get-mysql.outputs.mysql-fqdn }}"
-          
-          echo "🔄 Updating manifests with actual values..."
-          echo "  ACR: $ACR_NAME"
-          echo "  MySQL FQDN: $MYSQL_FQDN"
-          
-          if [ -z "$MYSQL_FQDN" ] || [ "$MYSQL_FQDN" == "null" ]; then
-            echo "❌ ERROR: MYSQL_FQDN is empty or null!"
-            exit 1
-          fi
-          
-          # Update backend deployment
-          sed -i "s|<ACR_NAME>\.azurecr\.io/book-review-backend:latest|${{ needs.build-and-push-images.outputs.backend-image }}|g" \
-            ${{ env.K8S_PATH }}/deployments/backend-deployment.yaml
-          
-          # Update frontend deployment  
-          sed -i "s|<ACR_NAME>\.azurecr\.io/book-review-frontend:latest|${{ needs.build-and-push-images.outputs.frontend-image }}|g" \
-            ${{ env.K8S_PATH }}/deployments/frontend-deployment.yaml
-          
-          # Update ConfigMap with MySQL FQDN - use explicit string
-          sed -i "s|database_host: \"<MYSQL_FQDN>\"|database_host: \"$MYSQL_FQDN\"|g" \
-            ${{ env.K8S_PATH }}/configmaps/app-config.yaml
-          
-          # Verify replacements
-          echo ""
-          echo "📋 Verification - ConfigMap database_host:"
-          grep "database_host:" ${{ env.K8S_PATH }}/configmaps/app-config.yaml
-          
-          echo ""
-          echo "📋 Verification - Backend image:"
-          grep "image:" ${{ env.K8S_PATH }}/deployments/backend-deployment.yaml | head -1
-          
-          # Check if placeholder still exists
-          if grep -q "<MYSQL_FQDN>" ${{ env.K8S_PATH }}/configmaps/app-config.yaml; then
-            echo "❌ ERROR: MYSQL_FQDN placeholder not replaced!"
-            cat ${{ env.K8S_PATH }}/configmaps/app-config.yaml
-            exit 1
-          fi
-          
-          echo "✅ Kubernetes manifests updated successfully"
-      
-      - name: Create Kubernetes Namespace
+          sed -i "s|<ACR_NAME>|${{ needs.build-and-push-images.outputs.acr-login-server }}|g" ${{ env.K8S_PATH }}/deployments/*.yaml
+          sed -i "s|<MYSQL_FQDN>|${{ needs.build-and-push-images.outputs.mysql-fqdn }}|g" ${{ env.K8S_PATH }}/configmaps/app-config.yaml
+
+      - name: Create Namespace
         run: |
           kubectl create namespace book-review-${{ github.event.inputs.environment }} --dry-run=client -o yaml | kubectl apply -f -
           kubectl config set-context --current --namespace=book-review-${{ github.event.inputs.environment }}
-      
-      - name: Create Kubernetes Secrets
+
+      - name: Create Secrets
         run: |
-          # Create or update database credentials and JWT secret
           kubectl create secret generic book-review-secrets \
             --from-literal=database_user=${{ secrets.MYSQL_ADMIN_USERNAME }} \
             --from-literal=database_password=${{ secrets.MYSQL_ADMIN_PASSWORD }} \
             --from-literal=jwt_secret=${{ secrets.JWT_SECRET }} \
             --dry-run=client -o yaml | kubectl apply -f -
-          
-          echo "✅ Secrets created/updated"
-      
+
       - name: Deploy ConfigMap
-        run: |
-          # Show the ConfigMap before applying
-          echo "📋 ConfigMap content:"
-          cat ${{ env.K8S_PATH }}/configmaps/app-config.yaml
-          
-          kubectl apply -f ${{ env.K8S_PATH }}/configmaps/app-config.yaml
-          echo "✅ ConfigMap deployed"
-          
-          # Verify what was actually deployed
-          echo ""
-          echo "📋 Deployed ConfigMap verification:"
-          kubectl get configmap book-review-config -o yaml
-      
+        run: kubectl apply -f ${{ env.K8S_PATH }}/configmaps/app-config.yaml
+
       - name: Deploy Backend
         run: |
           kubectl apply -f ${{ env.K8S_PATH }}/deployments/backend-deployment.yaml
           kubectl apply -f ${{ env.K8S_PATH }}/services/backend-service.yaml
-          
-          # Force restart to pull latest image (in case tag hasn't changed)
-          echo "🔄 Forcing rollout restart to ensure latest image is used..."
           kubectl rollout restart deployment/book-review-backend
-          
-          echo "⏳ Waiting for backend deployment to roll out..."
-          kubectl rollout status deployment/book-review-backend --timeout=300s || echo "⚠️ Rollout timeout - check debug output"
-          
-          echo ""
-          echo "📊 Current backend pod status:"
-          kubectl get pods -l component=backend
-          
-          echo "✅ Backend deployment applied"
-      
-      - name: Debug Backend Deployment
-        if: always()
-        continue-on-error: true
-        run: |
-          set +e  # Don't exit on error
-          
-          echo "🔍 Backend Pod Status:"
-          kubectl get pods -l component=backend -o wide 2>/dev/null || echo "No backend pods found"
-          
-          echo ""
-          echo "📋 Backend Deployment Status:"
-          kubectl get deployment book-review-backend 2>/dev/null || echo "Deployment not found"
-          
-          echo ""
-          echo "📋 Backend ReplicaSet Status:"
-          kubectl get rs -l app=book-review,component=backend 2>/dev/null || echo "No ReplicaSets found"
-          
-          echo ""
-          echo "📋 Recent Events (all):"
-          kubectl get events --sort-by='.lastTimestamp' 2>/dev/null | tail -20 || echo "No events found"
-          
-          echo ""
-          echo "📜 Backend Pod Logs (if any exist):"
-          PODS=$(kubectl get pod -l component=backend -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
-          if [ -n "$PODS" ]; then
-            for POD in $(echo $PODS | tr ' ' '\n' | head -3); do
-              echo ""
-              echo "=== Logs from $POD ==="
-              kubectl logs $POD --tail=50 2>/dev/null || echo "Failed to get logs from $POD"
-            done
-          else
-            echo "No backend pods available for logs"
-          fi
-          
-          echo ""
-          echo "📋 ConfigMap Values:"
-          kubectl get configmap book-review-config -o yaml 2>/dev/null | grep -A 5 "data:" || echo "ConfigMap not found"
-          
-          exit 0  # Always succeed
-      
+          kubectl rollout status deployment/book-review-backend --timeout=300s
+
       - name: Deploy Frontend
         run: |
-          # Optionally, print to verify (remove in production)
           kubectl apply -f ${{ env.K8S_PATH }}/deployments/frontend-deployment.yaml
           kubectl apply -f ${{ env.K8S_PATH }}/services/frontend-service.yaml
-          
-          # Force restart to pull latest image (in case tag hasn't changed)
-          echo "🔄 Forcing rollout restart to ensure latest image is used..."
           kubectl rollout restart deployment/book-review-frontend
-          
-          echo "⏳ Waiting for frontend deployment to roll out..."
-          kubectl rollout status deployment/book-review-frontend --timeout=300s || echo "⚠️ Rollout timeout - check debug output"
-          
-          echo ""
-          echo "📊 Current frontend pod status:"
-          kubectl get pods -l component=frontend
-          
-          echo "✅ Frontend deployment applied"
-      
+          kubectl rollout status deployment/book-review-frontend --timeout=300s
+
       - name: Deploy Ingress
-        run: |
-          echo "🌐 Deploying Ingress resource..."
-          kubectl apply -f ${{ env.K8S_PATH }}/ingress.yaml
-          echo "✅ Ingress resource applied"
-          
-      - name: Wait for Ingress IP Assignment
-        id: ingress-ip
-        run: |
-          echo "⏳ Waiting for Ingress Controller to assign external IP..."
-          
-          for i in {1..30}; do
-            INGRESS_IP=$(kubectl get ingress book-review-ingress -n book-review-dev -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
-            
-            if [ -n "$INGRESS_IP" ] && [ "$INGRESS_IP" != "null" ]; then
-              echo "✅ Ingress External IP assigned: $INGRESS_IP"
-              echo "ingress_ip=$INGRESS_IP" >> $GITHUB_OUTPUT
-              echo "ip_assigned=true" >> $GITHUB_OUTPUT
-              break
-            fi
-            
-            echo "Attempt $i/30: Waiting for IP assignment..."
-            sleep 10
-          done
-          
-          if [ -z "$INGRESS_IP" ] || [ "$INGRESS_IP" == "null" ]; then
-            echo "⚠️ Ingress IP not yet assigned after 5 minutes"
-            echo "ip_assigned=false" >> $GITHUB_OUTPUT
-            echo "ingress_ip=pending" >> $GITHUB_OUTPUT
-          fi
-          
-          echo ""
-          echo "📋 Ingress Status:"
-          kubectl get ingress -n book-review-dev
-          kubectl describe ingress book-review-ingress -n book-review-dev
-      
-      - name: Update CORS Origins with Ingress IP
-        if: steps.ingress-ip.outputs.ip_assigned == 'true'
-        run: |
-          INGRESS_IP="${{ steps.ingress-ip.outputs.ingress_ip }}"
-          
-          echo "🔄 Updating ALLOWED_ORIGINS with Ingress IP: $INGRESS_IP"
-          
-          # Get current ConfigMap
-          kubectl get configmap book-review-config -n book-review-dev -o yaml > /tmp/configmap.yaml
-          
-          # Update allowed_origins to include Ingress IP
-          sed -i "s|allowed_origins: .*|allowed_origins: \"http://$INGRESS_IP,http://localhost:3000\"|g" /tmp/configmap.yaml
-          
-          # Apply updated ConfigMap
-          kubectl apply -f /tmp/configmap.yaml
-          
-          echo "✅ ALLOWED_ORIGINS updated to include http://$INGRESS_IP"
-          
-          # Restart backend to pick up new config
-          kubectl rollout restart deployment/book-review-backend -n book-review-dev
-          
-          echo "🔄 Backend restarted to apply new CORS configuration"
-      
-      - name: Debug Frontend Issues
-        if: always()
-        run: |
-          echo "🔍 Checking frontend pod logs..."
-          PODS=$(kubectl get pod -l component=frontend -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
-          if [ -n "$PODS" ]; then
-            for POD in $(echo $PODS | tr ' ' '\n' | head -3); do
-              echo ""
-              echo "=== Logs from $POD ==="
-              kubectl logs $POD --tail=100 2>/dev/null || echo "Failed to get logs from $POD"
-              echo ""
-              echo "=== Previous logs (if crashed) ==="
-              kubectl logs $POD --previous --tail=50 2>/dev/null || echo "No previous logs"
-            done
-          else
-            echo "No frontend pods available for logs"
-          fi
-          
-          echo ""
-          echo "📋 Frontend Pod Events:"
-          kubectl get events --field-selector involvedObject.name!='' | grep frontend || echo "No frontend events"
-      
-      - name: Verify Application Health
-        if: steps.ingress-ip.outputs.ip_assigned == 'true'
-        run: |
-          INGRESS_IP="${{ steps.ingress-ip.outputs.ingress_ip }}"
-          
-          echo "🔍 Verifying application health via Ingress..."
-          echo ""
-          
-          # Test frontend through Ingress
-          echo "Testing frontend access..."
-          if kubectl run test-frontend-health --rm -i --restart=Never --image=curlimages/curl -n book-review-dev -- \
-            curl -s -o /dev/null -w "%{http_code}" http://ingress-nginx-controller.ingress-nginx.svc.cluster.local/ | grep -q "200"; then
-            echo "✅ Frontend is healthy"
-          else
-            echo "⚠️ Frontend health check inconclusive"
-          fi
-          
-          # Test backend API through Ingress
-          echo "Testing backend API access..."
-          if kubectl run test-backend-health --rm -i --restart=Never --image=curlimages/curl -n book-review-dev -- \
-            curl -s http://ingress-nginx-controller.ingress-nginx.svc.cluster.local/api/books | grep -q "title"; then
-            echo "✅ Backend API is healthy"
-          else
-            echo "⚠️ Backend API health check inconclusive"
-          fi
-          
-          echo ""
-          echo "✅ Application deployed successfully!"
-          echo "🌐 Application URL: http://$INGRESS_IP"
-          echo "🔗 Backend API: http://$INGRESS_IP/api"
-      
-      - name: Deployment Summary
-        run: |
-          INGRESS_IP="${{ steps.ingress-ip.outputs.ingress_ip }}"
-          NAMESPACE="book-review-${{ github.event.inputs.environment }}"
-          RESOURCE_GROUP="${{ needs.build-and-push-images.outputs.resource-group }}"
-          AKS_CLUSTER="${{ needs.build-and-push-images.outputs.aks-cluster-name }}"
-          ACR_SERVER="${{ needs.build-and-push-images.outputs.acr-login-server }}"
-          MYSQL_FQDN="${{ needs.build-and-push-images.outputs.mysql-fqdn }}"
-          
-          # Get deployment timestamp
-          DEPLOY_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
-          
-          # Count resources
-          POD_COUNT=$(kubectl get pods -n $NAMESPACE --no-headers | wc -l)
-          RUNNING_PODS=$(kubectl get pods -n $NAMESPACE --field-selector=status.phase=Running --no-headers | wc -l)
-          
-          # Generate detailed GitHub Actions Step Summary
-          cat >> $GITHUB_STEP_SUMMARY << EOF
-          # 🚀 Book Review Application - Deployment Summary
+        run: kubectl apply -f ${{ env.K8S_PATH }}/ingress.yaml
