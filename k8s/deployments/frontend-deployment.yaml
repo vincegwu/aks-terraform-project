@@ -21,7 +21,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: frontend
-          image: cloudprojdevacr01b0dd.azurecr.io/book-review-frontend:__IMAGE_TAG__
+          image: cloudprojdevacr01b0dd.azurecr.io/book-review-frontend:latest
           imagePullPolicy: IfNotPresent
 
           ports:
