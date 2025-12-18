@@ -31,6 +31,10 @@ on:
         description: 'Infra workflow run ID (for fetching Terraform state)'
         required: false
 
+permissions:
+  contents: read
+  id-token: write
+
 env:
   FRONTEND_PATH: './frontend'   # root folder Dockerfile
   BACKEND_PATH: './backend'     # root folder Dockerfile
