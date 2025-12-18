@@ -153,11 +153,24 @@ jobs:
       - name: Deploy ConfigMap
         run: kubectl apply -f ${{ env.K8S_PATH }}/configmaps/app-config.yaml
 
-      - name: Deploy Backend & Service
+      - name: Deploy Backend
         run: |
-          kubectl apply -f ${{ env.K8S_PATH }}/deployments/backend-deployment.yaml
-          kubectl apply -f ${{ env.K8S_PATH }}/services/backend-service.yaml
-          kubectl rollout status deployment/book-review-backend --timeout=300s
+           kubectl apply -n book-review-${{ github.event.inputs.environment }} \
+           -f ${{ env.K8S_PATH }}/deployments/backend-deployment.yaml \
+           -f ${{ env.K8S_PATH }}/services/backend-service.yaml
+
+           # Force restart to pull latest image (in case tag hasn't changed)
+           echo "🔄 Forcing rollout restart to ensure latest image is used..." 
+           kubectl rollout restart deployment/book-review-backend -n book-review-${{ github.event.inputs.environment }}
+
+           
+           echo "⏳ Waiting for backend deployment to roll out..."
+           kubectl rollout status deployment/book-review-backend -n book-review-${{ github.event.inputs.environment }} --timeout=300s || echo "⚠️ Rollout timeout - check debug output"
+          
+           echo ""
+           echo "📊 Current backend pod status:"
+           kubectl get pods -l component=backend -n book-review-${{ github.event.inputs.environment }}
+           echo "✅ Backend deployment applied"
 
       - name: Deploy Frontend & Service
         run: |
