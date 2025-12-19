@@ -6,10 +6,7 @@ metadata:
   labels:
     app: book-review
 data:
-  next_public_api_url: "http://app.berryexcel.online/api"  # full URL
   database_host: "cloudproj-dev-mysql-01b0dd.mysql.database.azure.com"
   database_port: "3306"
   database_name: "book_review_db"
-  backend_port: "3001"
-  frontend_port: "3000"
-  allowed_origins: "http://localhost:8080,http://app.berryexcel.online"
+  allowed_origins: "http://localhost:8080,http://app.berryexcel.online,https://app.berryexcel.online"

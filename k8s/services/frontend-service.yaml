@@ -12,7 +12,7 @@ spec:
     app: book-review
     component: frontend
   ports:
-  - port: 3000
-    targetPort: 3000
-    protocol: TCP
-    name: http
+    - name: http
+      port: 3000
+      targetPort: 3000
+      protocol: TCP

@@ -1,0 +1,47 @@
+grafana:
+  enabled: true
+  admin:
+    existingSecret: grafana-admin-secret
+    userKey: admin-user
+    passwordKey: admin-password
+
+  persistence:
+    enabled: true
+    storageClassName: managed-premium
+    size: 5Gi
+
+  service:
+    type: ClusterIP
+
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    hosts:
+      - grafana.berryexcel.online
+    path: /
+    pathType: Prefix
+
+prometheus:
+  enabled: true
+
+  prometheusSpec:
+    retention: 15d
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: managed-premium
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 20Gi
+
+alertmanager:
+  enabled: true
+
+nodeExporter:
+  enabled: true
+
+kubeStateMetrics:
+  enabled: true

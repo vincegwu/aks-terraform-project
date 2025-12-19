@@ -18,45 +18,52 @@ spec:
         app: book-review
         component: frontend
     spec:
+      terminationGracePeriodSeconds: 30
       containers:
-      - name: frontend
-        image: <ACR_NAME>.azurecr.io/book-review-frontend:latest
-        imagePullPolicy: Always
+        - name: frontend
+          image: cloudprojdevacr01b0dd.azurecr.io/book-review-frontend:latest
+          imagePullPolicy: IfNotPresent
 
-        command: ["npx"]
-        args: ["next", "start", "-p", "3000", "-H", "0.0.0.0"]
+          ports:
+            - containerPort: 3000
+              name: http
 
-        ports:
-        - containerPort: 3000
-          name: http
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: NEXT_PUBLIC_API_URL
+              value: "http://app.berryexcel.online"
 
-        env:
-        - name: NODE_ENV
-          value: "production"
-        - name: NEXT_PUBLIC_API_URL
-          valueFrom:
-            configMapKeyRef:
-              name: book-review-config
-              key: next_public_api_url
-        resources:
-          requests:
-            memory: "256Mi"
-            cpu: "200m"
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
-        readinessProbe:
-          httpGet:
-            path: /
-            port: 3000
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 5
-        livenessProbe:
-          httpGet:
-            path: /
-            port: 3000
-          initialDelaySeconds: 60
-          periodSeconds: 15
-          timeoutSeconds: 10
-          failureThreshold: 5
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "200m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+          startupProbe:
+            tcpSocket:
+              port: 3000
+            failureThreshold: 60
+            periodSeconds: 10
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 60
+            periodSeconds: 20
+
+
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 10"]
