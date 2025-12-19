@@ -157,7 +157,7 @@ jobs:
           COPY package*.json ./
           RUN npm ci --only=production || true
           COPY . .
-          EXPOSE 8080
+          EXPOSE 3001
           CMD ["npm", "start"]
           EOF
 
