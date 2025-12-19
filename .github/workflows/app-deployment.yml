@@ -145,30 +145,8 @@ jobs:
       
       - name: Build and Push Backend Image
         run: |
-          # Check if backend directory exists
-          # if [ ! -d "${{ env.BACKEND_PATH }}" ]; then
-          #   echo "⚠️ Backend directory not found at ${{ env.BACKEND_PATH }}"
-          #   echo "Creating a sample Dockerfile for demonstration..."
-          # mkdir -p ${{ env.BACKEND_PATH }}
-          # cat > ${{ env.BACKEND_PATH }}/Dockerfile <<EOF
+          echo "🏗️ Building backend Docker image..."
 
-          # FROM node:18-alpine
-          # WORKDIR /app
-          # COPY package*.json ./
-          # RUN npm ci --only=production || true
-          # COPY . .
-          # EXPOSE 3001
-          # CMD ["npm", "start"]
-          # EOF
-
-          # # # fi
-          # docker build -t ${{ steps.get-infra.outputs.acr-login-server }}/book-review-backend:${{ github.event.inputs.backend_image_tag }} \
-          #   ${{ env.BACKEND_PATH }}
-          
-          # docker push ${{ steps.get-infra.outputs.acr-login-server }}/book-review-backend:${{ github.event.inputs.backend_image_tag }}
-          
-          # echo "✅ Backend image pushed successfully"
-          
           docker build \
           -f ./docker/backend.Dockerfile \
           -t ${{ steps.get-infra.outputs.acr-login-server }}/book-review-backend:${{ github.event.inputs.backend_image_tag }} \
@@ -178,144 +156,6 @@ jobs:
           
           echo "✅ Backend image pushed successfully"
       
-      # - name: Build or Validate Frontend Dockerfile
-      #   env:
-      #     NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
-      #   run: |
-      #     # Check if frontend directory exists
-      #     if [ ! -d "${{ env.FRONTEND_PATH }}" ]; then
-      #       echo "⚠️ Frontend directory not found at ${{ env.FRONTEND_PATH }}"
-            
-      #       mkdir -p ${{ env.FRONTEND_PATH }}
-      #       cat > ${{ env.FRONTEND_PATH }}/Dockerfile <<EOF
-
-      #     FROM nginx:alpine
-      #     COPY . /usr/share/nginx/html
-      #     EXPOSE 80
-      #     CMD ["nginx", "-g", "daemon off;"]
-      #     EOF
-      #     else
-      #       echo "✅ Frontend directory found"
-            
-      #       # Check if Dockerfile exists, if not create a proper Next.js production Dockerfile
-      #       if [ ! -f "${{ env.FRONTEND_PATH }}/Dockerfile" ]; then
-      #         echo "📝 Creating production-ready Next.js Dockerfile..."
-      #         cat > ${{ env.FRONTEND_PATH }}/Dockerfile <<'EOF'
-
-      #     # Multi-stage build for Next.js application
-      #     FROM node:18-alpine AS deps
-      #     RUN apk add --no-cache libc6-compat
-      #     WORKDIR /app
-      #     COPY package*.json ./
-      #     RUN npm ci
-          
-      #       echo "Injecting NEXT_PUBLIC_API_URL: $NEXT_PUBLIC_API_URL"
-      #     FROM node:18-alpine AS builder
-      #     WORKDIR /app
-
-      #     # Set environment variables for build
-
-      #     ENV NEXT_TELEMETRY_DISABLED=1
-      #     ENV NODE_ENV=production
-
-      #     COPY --from=deps /app/node_modules ./node_modules
-      #     COPY . .
-          
-      #     # Build the application
-      #     RUN npm run build
-          
-      #     FROM node:18-alpine AS runner
-      #     WORKDIR /app
-
-      #     ENV NODE_ENV=production
-      #     ENV NEXT_TELEMETRY_DISABLED=1
-          
-      #     RUN addgroup --system --gid 1001 nodejs
-      #     RUN adduser --system --uid 1001 nextjs
-          
-      #     # Copy package files
-      #     COPY --from=builder /app/package.json ./package.json
-          
-      #     # Copy public assets (ensured to exist in builder)
-      #     COPY --from=builder /app/public ./public
-          
-      #     # Copy .next folder (includes all build output and config)
-      #     COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
-          
-      #     # Copy node_modules for runtime dependencies
-      #     COPY --from=builder /app/node_modules ./node_modules
-          
-      #     USER nextjs
-      #     EXPOSE 3000
-      #     ENV PORT=3000
-      #     ENV HOSTNAME=0.0.0.0
-          
-      #     # Start Next.js in production mode
-      #     CMD ["npm", "start"]
-      #     EOF
-      #       else
-      #         echo "📝 Dockerfile exists, checking if it builds Next.js..."
-      #         # Check if Dockerfile includes build step
-      #         if ! grep -q "npm run build\|next build" "${{ env.FRONTEND_PATH }}/Dockerfile"; then
-      #           echo "⚠️ Existing Dockerfile may not build Next.js. Creating optimized version..."
-      #           mv "${{ env.FRONTEND_PATH }}/Dockerfile" "${{ env.FRONTEND_PATH }}/Dockerfile.original"
-      #           cat > ${{ env.FRONTEND_PATH }}/Dockerfile <<'EOF'
-
-      #     # Multi-stage build for Next.js application
-      #     FROM node:18-alpine AS deps
-      #     RUN apk add --no-cache libc6-compat
-      #     WORKDIR /app
-      #     COPY package*.json ./
-      #     RUN npm ci
-          
-      #     FROM node:18-alpine AS builder
-      #     WORKDIR /app
-      #     COPY --from=deps /app/node_modules ./node_modules
-      #     COPY . .
-          
-      #     # Set environment variables for build
-      #     ARG NEXT_PUBLIC_API_URL
-      #     env:
-      #       NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
-      #       NEXT_TELEMETRY_DISABLED: 1
-      #       NODE_ENV: production
-      #       PORT: 3000
-      #       HOSTNAME: 0.0.0.0
-          
-      #     # Ensure public directory exists (even if empty)
-      #     RUN mkdir -p public
-          
-      #     # Build the application
-      #     RUN npm run build
-          
-      #     FROM node:18-alpine AS runner
-      #     WORKDIR /app
-          
-      #     RUN addgroup --system --gid 1001 nodejs
-      #     RUN adduser --system --uid 1001 nextjs
-          
-      #     # Copy package files
-      #     COPY --from=builder /app/package.json ./package.json
-          
-      #     # Copy public assets (ensured to exist in builder)
-      #     COPY --from=builder /app/public ./public
-          
-      #     # Copy .next folder (includes all build output and config)
-      #     COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
-          
-      #     # Copy node_modules for runtime dependencies
-      #     COPY --from=builder /app/node_modules ./node_modules
-          
-      #     USER nextjs
-      #     EXPOSE 3000
-          
-          
-      #     # Start Next.js in production mode
-      #     CMD ["npm", "start"]
-      #     EOF
-      #         fi
-      #       fi
-      #     fi
           
       - name: Validate NEXT_PUBLIC_API_URL in Dockerfile
         run: |
@@ -386,35 +226,6 @@ jobs:
             2>/dev/null || echo "Role assignment already exists or not needed"
           
           echo "✅ Role assignment complete"
-      
-      # - name: Install kubelogin
-      #   run: |
-      #     echo "📦 Installing kubelogin for Azure AD authentication..."
-          
-      #     # Download and install kubelogin using the correct URL format
-      #     KUBELOGIN_VERSION="v0.1.4"
-          
-      #     # Download the zip file with error checking
-      #     echo "Downloading kubelogin ${KUBELOGIN_VERSION}..."
-      #     curl -fsSL "https://github.com/Azure/kubelogin/releases/download/${KUBELOGIN_VERSION}/kubelogin-linux-amd64.zip" -o kubelogin.zip
-          
-      #     # Verify the download
-      #     if [ ! -f kubelogin.zip ] || [ ! -s kubelogin.zip ]; then
-      #       echo "❌ Download failed or file is empty"
-      #       exit 1
-      #     fi
-          
-      #     # Unzip and install
-      #     unzip -o kubelogin.zip
-      #     sudo install -m 755 bin/linux_amd64/kubelogin /usr/local/bin/kubelogin
-          
-      #     # Clean up
-      #     rm -rf kubelogin.zip bin/
-          
-      #     # Verify installation
-      #     kubelogin --version
-          
-      #     echo "✅ kubelogin installed successfully"
       
       - name: Get AKS Credentials
         run: |
@@ -634,29 +445,7 @@ jobs:
           echo "📋 Ingress Status:"
           kubectl get ingress -n ${{ env.NAMESPACE }}
           kubectl describe ingress book-review-ingress -n ${{ env.NAMESPACE }}
-      
-      # - name: Update CORS Origins with Ingress IP
-      #   if: steps.ingress-ip.outputs.ip_assigned == 'true'
-      #   run: |
-      #     INGRESS_IP="${{ steps.ingress-ip.outputs.ingress_ip }}"
-          
-      #     echo "🔄 Updating ALLOWED_ORIGINS with Ingress IP: $INGRESS_IP"
-          
-      #     # Get current ConfigMap
-      #     kubectl get configmap book-review-config -n ${{ env.NAMESPACE }} -o yaml > /tmp/configmap.yaml
-          
-      #     # Update allowed_origins to include Ingress IP
-      #     sed -i "s|allowed_origins: .*|allowed_origins: \"http://app.berryexcel.online,http://localhost:3000\"|g" /tmp/configmap.yaml
-          
-      #     # Apply updated ConfigMap
-      #     kubectl apply -f /tmp/configmap.yaml
-          
-      #     echo "✅ ALLOWED_ORIGINS updated to include http://$INGRESS_IP"
-          
-      #     # Restart backend to pick up new config
-      #     kubectl rollout restart deployment/book-review-backend -n ${{ env.NAMESPACE }}
-          
-      #     echo "🔄 Backend restarted to apply new CORS configuration"
+    
       
       - name: Debug Frontend Issues
         if: always()

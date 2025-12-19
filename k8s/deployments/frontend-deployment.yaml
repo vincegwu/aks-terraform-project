@@ -32,7 +32,7 @@ spec:
             - name: NODE_ENV
               value: "production"
             - name: NEXT_PUBLIC_API_URL
-              value: "/api"
+              value: "http://app.berryexcel.online"
 
           resources:
             requests:
