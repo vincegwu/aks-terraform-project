@@ -83,21 +83,21 @@ spec:
 
           startupProbe:
             httpGet:
-              path: /
+              path: /api/books
               port: 3001
             failureThreshold: 30
             periodSeconds: 10
 
           readinessProbe:
             httpGet:
-              path: /
+              path: /api/books
               port: 3001
             initialDelaySeconds: 20
             periodSeconds: 10
 
           livenessProbe:
             httpGet:
-              path: /
+              path: /api/books
               port: 3001
             initialDelaySeconds: 60
             periodSeconds: 20

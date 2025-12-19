@@ -18,4 +18,4 @@ ENV PORT=3001
 EXPOSE 3001
 
 # ✅ Run the actual entry file
-CMD ["npm", "start"]
+CMD ["node", "index.js"]
