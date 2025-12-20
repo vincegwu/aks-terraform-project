@@ -210,29 +210,29 @@ jobs:
             exit 0
           fi
       
-      - name: ACR Manual Setup Instructions
-        if: steps.attach-acr.outputs.success == 'false'
-        run: |
-          echo "⚠️ =========================================="
-          echo "⚠️  MANUAL STEP REQUIRED"
-          echo "⚠️ =========================================="
-          echo ""
-          echo "The service principal lacks permissions to attach ACR to AKS."
-          echo "Please run ONE of these commands manually:"
-          echo ""
-          echo "Option 1 - Using Azure CLI:"
-          echo "  az aks update \\"
-          echo "    --name ${{ steps.tf-outputs.outputs.aks_cluster_name }} \\"
-          echo "    --resource-group ${{ steps.tf-outputs.outputs.resource_group_name }} \\"
-          echo "    --attach-acr ${{ steps.tf-outputs.outputs.acr_name }}"
-          echo ""
-          echo "Option 2 - Via Azure Portal:"
-          echo "  1. Go to ACR: ${{ steps.tf-outputs.outputs.acr_name }}"
-          echo "  2. Access Control (IAM) → Add role assignment"
-          echo "  3. Role: AcrPull"
-          echo "  4. Assign to: ${{ steps.tf-outputs.outputs.aks_cluster_name }}-agentpool managed identity"
-          echo ""
-          echo "⚠️ =========================================="
+      # - name: ACR Manual Setup Instructions
+      #   if: steps.attach-acr.outputs.success == 'false'
+      #   run: |
+      #     echo "⚠️ =========================================="
+      #     echo "⚠️  MANUAL STEP REQUIRED"
+      #     echo "⚠️ =========================================="
+      #     echo ""
+      #     echo "The service principal lacks permissions to attach ACR to AKS."
+      #     echo "Please run ONE of these commands manually:"
+      #     echo ""
+      #     echo "Option 1 - Using Azure CLI:"
+      #     echo "  az aks update \\"
+      #     echo "    --name ${{ steps.tf-outputs.outputs.aks_cluster_name }} \\"
+      #     echo "    --resource-group ${{ steps.tf-outputs.outputs.resource_group_name }} \\"
+      #     echo "    --attach-acr ${{ steps.tf-outputs.outputs.acr_name }}"
+      #     echo ""
+      #     echo "Option 2 - Via Azure Portal:"
+      #     echo "  1. Go to ACR: ${{ steps.tf-outputs.outputs.acr_name }}"
+      #     echo "  2. Access Control (IAM) → Add role assignment"
+      #     echo "  3. Role: AcrPull"
+      #     echo "  4. Assign to: ${{ steps.tf-outputs.outputs.aks_cluster_name }}-agentpool managed identity"
+      #     echo ""
+      #     echo "⚠️ =========================================="
       
       - name: Upload Terraform State Info
         uses: actions/upload-artifact@v4
@@ -310,70 +310,70 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Access your applications via this IP once Ingress resources are created." >> $GITHUB_STEP_SUMMARY
       
-      # Install Helm
-      - name: Setup Helm
-        uses: azure/setup-helm@v3
+      # # Install Helm
+      # - name: Setup Helm
+      #   uses: azure/setup-helm@v3
 
 
-      # Add Prometheus and Grafana Helm repos
-      - name: Add Prometheus and Grafana Helm repos
-        run: |
-          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-          helm repo add grafana https://grafana.github.io/helm-charts
-          helm repo update
+      # # Add Prometheus and Grafana Helm repos
+      # - name: Add Prometheus and Grafana Helm repos
+      #   run: |
+      #     helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+      #     helm repo add grafana https://grafana.github.io/helm-charts
+      #     helm repo update
       
-      # Deploy Prometheus + Grafana
-      - name: Deploy Monitoring Stack
-        run: |
-          helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
-            --namespace monitoring --create-namespace \
-            -f monitoring/values.yaml \
-            --set grafana.adminPassword=${{ secrets.GRAFANA_PASSWORD }} \
-            --wait
+      # # Deploy Prometheus + Grafana
+      # - name: Deploy Monitoring Stack
+      #   run: |
+      #     helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+      #       --namespace monitoring --create-namespace \
+      #       -f monitoring/values.yaml \
+      #       --set grafana.adminPassword=${{ secrets.GRAFANA_PASSWORD }} \
+      #       --wait
       
-      # Wait until all Prometheus + Grafana pods are ready
+      # # Wait until all Prometheus + Grafana pods are ready
 
 
-      - name: Wait for Monitoring Pods
-        id: wait-monitoring
-        run: |
-          echo "GRAFANA_NOT_READY=0" >> $GITHUB_ENV
-          set -e
-          kubectl wait --namespace monitoring \
-            --for=condition=ready pod \
-            --selector=app.kubernetes.io/instance=prometheus \
-            --timeout=600s
-          kubectl wait --namespace monitoring \
-            --for=condition=ready pod \
-            --selector=app.kubernetes.io/instance=grafana \
-            --timeout=600s || echo "GRAFANA_NOT_READY=1" >> $GITHUB_ENV
+      # - name: Wait for Monitoring Pods
+      #   id: wait-monitoring
+      #   run: |
+      #     echo "GRAFANA_NOT_READY=0" >> $GITHUB_ENV
+      #     set -e
+      #     kubectl wait --namespace monitoring \
+      #       --for=condition=ready pod \
+      #       --selector=app.kubernetes.io/instance=prometheus \
+      #       --timeout=600s
+      #     kubectl wait --namespace monitoring \
+      #       --for=condition=ready pod \
+      #       --selector=app.kubernetes.io/instance=grafana \
+      #       --timeout=600s || echo "GRAFANA_NOT_READY=1" >> $GITHUB_ENV
 
-      - name: Print Monitoring Pod Status
-        if: ${{ env.GRAFANA_NOT_READY == '1' }}
-        run: |
-          echo "🔎 Printing all pods in monitoring namespace:"
-          kubectl get pods -n monitoring -o wide
-          echo "\n🔎 Printing events in monitoring namespace:"
-          kubectl get events -n monitoring --sort-by=.metadata.creationTimestamp
+      # - name: Print Monitoring Pod Status
+      #   if: ${{ env.GRAFANA_NOT_READY == '1' }}
+      #   run: |
+      #     echo "🔎 Printing all pods in monitoring namespace:"
+      #     kubectl get pods -n monitoring -o wide
+      #     echo "\n🔎 Printing events in monitoring namespace:"
+      #     kubectl get events -n monitoring --sort-by=.metadata.creationTimestamp
 
-      - name: Describe Grafana Pod
-        if: env.GRAFANA_NOT_READY == '1'
-        run: |
-          GRAFANA_POD=$(kubectl get pods -n monitoring -l app.kubernetes.io/instance=grafana -o jsonpath='{.items[0].metadata.name}')
-          echo "\n🔎 Describing Grafana pod: $GRAFANA_POD"
-          kubectl describe pod $GRAFANA_POD -n monitoring
-          echo "\n🔎 Grafana pod logs:"
-          kubectl logs $GRAFANA_POD -n monitoring || true
+      # - name: Describe Grafana Pod
+      #   if: env.GRAFANA_NOT_READY == '1'
+      #   run: |
+      #     GRAFANA_POD=$(kubectl get pods -n monitoring -l app.kubernetes.io/instance=grafana -o jsonpath='{.items[0].metadata.name}')
+      #     echo "\n🔎 Describing Grafana pod: $GRAFANA_POD"
+      #     kubectl describe pod $GRAFANA_POD -n monitoring
+      #     echo "\n🔎 Grafana pod logs:"
+      #     kubectl logs $GRAFANA_POD -n monitoring || true
 
-      # Set Monitoring URLs and Pods
-      - name: Set Monitoring URLs and Pods
-        run: |
-          export GRAFANA_URL=$(kubectl get svc prometheus-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-          export PROM_URL=$(kubectl get svc prometheus-kube-prometheus-prometheus -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-          export MON_PODS=$(kubectl get pods -n monitoring -o custom-columns=":metadata.name,:status.phase")
-          echo "GRAFANA_URL=$GRAFANA_URL" >> $GITHUB_ENV
-          echo "PROM_URL=$PROM_URL" >> $GITHUB_ENV
-          echo "MON_PODS=$MON_PODS" >> $GITHUB_ENV
+      # # Set Monitoring URLs and Pods
+      # - name: Set Monitoring URLs and Pods
+      #   run: |
+      #     export GRAFANA_URL=$(kubectl get svc prometheus-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+      #     export PROM_URL=$(kubectl get svc prometheus-kube-prometheus-prometheus -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+      #     export MON_PODS=$(kubectl get pods -n monitoring -o custom-columns=":metadata.name,:status.phase")
+      #     echo "GRAFANA_URL=$GRAFANA_URL" >> $GITHUB_ENV
+      #     echo "PROM_URL=$PROM_URL" >> $GITHUB_ENV
+      #     echo "MON_PODS=$MON_PODS" >> $GITHUB_ENV
       
       # 🔟 Send Slack notification for infra + monitoring success
       - name: Slack Notification - Deployment Success
