@@ -6,7 +6,7 @@ metadata:
   labels:
     app: book-review
 data:
-  database_host: "cloudproj-dev-mysql-01b0dd.mysql.database.azure.com"
+  database_host: "cloudproj-dev-mysql-e5f880.mysql.database.azure.com"
   database_port: "3306"
   database_name: "book_review_db"
   allowed_origins: "http://localhost:8080,http://app.berryexcel.online,https://app.berryexcel.online"
