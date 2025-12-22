@@ -1,3 +1,4 @@
+provider "random" {}
 # Determine the current Terraform workspace
 terraform {
   required_version = ">= 1.6"

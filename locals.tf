@@ -2,7 +2,7 @@ locals {
   name_prefix = "${var.project_name}-${var.environment}"
 
   # Create unique suffix for globally unique resources
-  unique_suffix = var.resource_suffix != "" ? var.resource_suffix : substr(md5("${var.project_name}-${var.environment}"), 0, 6)
+  unique_suffix = var.resource_suffix != "" ? var.resource_suffix : random_id.acr_suffix.hex
 
   tags = {
     environment = var.environment
